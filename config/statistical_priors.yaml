@@ -1,0 +1,170 @@
+# Statistical priors governing symptom sampling and behavioral transitions.
+#
+# STATUS: The numeric values below are illustrative placeholders that define the
+# correct *shape* and *plausible range* for each distribution. They are NOT yet
+# backed by extracted literature values. Before using this framework for any
+# research claim, replace each `source` field with a real citation using the
+# extraction template in research/README.md, and update `value`/`mean`/`std`
+# accordingly. Every field is deliberately kept explicit (rather than hard-coded
+# in Python) so that updating a citation never requires a code change.
+#
+# Stages follow the Reisberg Global Deterioration Scale (GDS) / Functional
+# Assessment Staging (FAST), stages 5-7 corresponding to moderately severe
+# through very severe cognitive decline.
+
+version: 1
+
+citation_note: >
+  Placeholder priors pending literature extraction. See research/README.md for
+  the PubMed/ACM indexing template used to replace these with sourced values.
+
+stages:
+  stage_5:
+    label: "Moderately Severe Decline (GDS 5 / FAST 5)"
+    verbal_fluency_mean_wpm:
+      distribution: normal
+      mean: 45.0
+      std: 12.0
+      min: 15.0
+      max: 90.0
+      unit: words_per_turn
+      source: "PLACEHOLDER - pending literature extraction"
+    non_verbal_cue_probability:
+      distribution: bernoulli
+      value: 0.15
+      source: "PLACEHOLDER - pending literature extraction"
+    factual_inversion_rate:
+      distribution: bernoulli
+      value: 0.18
+      source: "PLACEHOLDER - pending literature extraction"
+    anomia_rate:
+      distribution: bernoulli
+      value: 0.30
+      source: "PLACEHOLDER - pending literature extraction"
+    distress_escalation_prob:
+      distribution: bernoulli
+      value: 0.10
+      source: "PLACEHOLDER - pending literature extraction"
+
+  stage_6:
+    label: "Severe Decline (GDS 6 / FAST 6)"
+    verbal_fluency_mean_wpm:
+      distribution: normal
+      mean: 22.0
+      std: 8.0
+      min: 5.0
+      max: 55.0
+      unit: words_per_turn
+      source: "PLACEHOLDER - pending literature extraction"
+    non_verbal_cue_probability:
+      distribution: bernoulli
+      value: 0.35
+      source: "PLACEHOLDER - pending literature extraction"
+    factual_inversion_rate:
+      distribution: bernoulli
+      value: 0.35
+      source: "PLACEHOLDER - pending literature extraction"
+    anomia_rate:
+      distribution: bernoulli
+      value: 0.50
+      source: "PLACEHOLDER - pending literature extraction"
+    distress_escalation_prob:
+      distribution: bernoulli
+      value: 0.22
+      source: "PLACEHOLDER - pending literature extraction"
+
+  stage_7:
+    label: "Very Severe Decline (GDS 7 / FAST 7)"
+    verbal_fluency_mean_wpm:
+      distribution: normal
+      mean: 6.0
+      std: 4.0
+      min: 0.0
+      max: 20.0
+      unit: words_per_turn
+      source: "PLACEHOLDER - pending literature extraction"
+    non_verbal_cue_probability:
+      distribution: bernoulli
+      value: 0.65
+      source: "PLACEHOLDER - pending literature extraction"
+    factual_inversion_rate:
+      distribution: bernoulli
+      value: 0.55
+      source: "PLACEHOLDER - pending literature extraction"
+    anomia_rate:
+      distribution: bernoulli
+      value: 0.75
+      source: "PLACEHOLDER - pending literature extraction"
+    distress_escalation_prob:
+      distribution: bernoulli
+      value: 0.30
+      source: "PLACEHOLDER - pending literature extraction"
+
+# Row-stochastic transition matrix for the coarse emotional/distress state
+# machine. Rows and columns are ordered [calm, confused, agitated, withdrawn].
+# Each row MUST sum to 1.0 (validated at load time).
+distress_transition_matrix:
+  calm:
+    calm: 0.70
+    confused: 0.20
+    agitated: 0.05
+    withdrawn: 0.05
+  confused:
+    calm: 0.25
+    confused: 0.45
+    agitated: 0.20
+    withdrawn: 0.10
+  agitated:
+    calm: 0.10
+    confused: 0.20
+    agitated: 0.55
+    withdrawn: 0.15
+  withdrawn:
+    calm: 0.15
+    confused: 0.15
+    agitated: 0.10
+    withdrawn: 0.60
+
+# Non-verbal cue banks, escalating in frequency/intensity by stage. Sampled
+# uniformly at random when symptom_sampler decides a non-verbal cue fires.
+non_verbal_cue_bank:
+  stage_5:
+    - "*pauses, searching for the word*"
+    - "*glances toward the window*"
+    - "*taps fingers on the armrest*"
+    - "*frowns slightly, concentrating*"
+  stage_6:
+    - "*gazes blankly for a moment*"
+    - "*agitated sigh*"
+    - "*fidgets with the edge of a blanket*"
+    - "*eyes dart around the room, unsettled*"
+    - "*reaches out, then withdraws the hand*"
+  stage_7:
+    - "*gazes blankly*"
+    - "*a low, wordless moan*"
+    - "*eyes flutter half-closed*"
+    - "*a faint, unfocused smile*"
+    - "*trembling hands, no words*"
+    - "*turns away, silent*"
+
+# Keyword heuristics used by the distress tracker to detect trainee behavior.
+# These are intentionally simple lexical heuristics, not clinical NLP.
+redirection_keywords:
+  - "would you like to"
+  - "let's talk about"
+  - "tell me about"
+  - "that sounds"
+  - "i'm here with you"
+  - "it's okay"
+  - "you're safe"
+  - "how does that feel"
+
+pressuring_keywords:
+  - "don't you remember"
+  - "that's not true"
+  - "you're wrong"
+  - "think harder"
+  - "i already told you"
+  - "why can't you remember"
+  - "what year is it"
+  - "who am i"

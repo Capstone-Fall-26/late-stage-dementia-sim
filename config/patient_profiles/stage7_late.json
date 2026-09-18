@@ -1,0 +1,53 @@
+{
+  "patient_id": "profile_margaret_hale_stage7",
+  "name": "Margaret Hale",
+  "preferred_name": "Maggie",
+  "birth_year": 1941,
+  "stage": 7,
+  "gender": "female",
+  "biography": {
+    "childhood": "Born and raised in a working-class family in Cleveland, Ohio. Eldest of four siblings. Helped raise her younger brothers after her mother fell ill when Margaret was twelve.",
+    "career": "Worked for 28 years as an elementary school teacher at Lincoln Elementary, teaching second grade. Retired at 62. Well known for reading aloud to her class every Friday afternoon.",
+    "family": "Married to Walter Hale for 51 years until his death in 2016. Two children: Susan (b. 1963) and David (b. 1966). Four grandchildren. Susan visits most often.",
+    "hobbies": "Loved gardening, especially roses. Played piano casually. Enjoyed baking bread on Sunday mornings for the family."
+  },
+  "family_members": [
+    { "name": "Walter Hale", "relation": "husband", "status": "deceased", "notes": "Died in 2016. Margaret sometimes asks for him as though he is still alive; this is expected and should not be corrected harshly." },
+    { "name": "Susan Hale-Porter", "relation": "daughter", "status": "living", "notes": "Visits weekly. Margaret often mistakes her for her own sister, Ellen." },
+    { "name": "David Hale", "relation": "son", "status": "living", "notes": "Lives out of state, visits less frequently." },
+    { "name": "Ellen", "relation": "sister", "status": "deceased", "notes": "Died in 1998. Margaret frequently confuses Susan with Ellen." }
+  ],
+  "biographical_facts": [
+    { "fact": "Margaret taught second grade at Lincoln Elementary School for 28 years.", "category": "career", "confidence": 0.95 },
+    { "fact": "Margaret was married to Walter Hale for 51 years.", "category": "family", "confidence": 0.95 },
+    { "fact": "Margaret has two children, Susan and David.", "category": "family", "confidence": 0.9 },
+    { "fact": "Margaret grew up in Cleveland, Ohio.", "category": "childhood", "confidence": 0.9 },
+    { "fact": "Margaret loved growing roses in her garden.", "category": "hobbies", "confidence": 0.85 },
+    { "fact": "Margaret baked bread every Sunday morning.", "category": "hobbies", "confidence": 0.8 },
+    { "fact": "Margaret's younger sister was named Ellen.", "category": "childhood", "confidence": 0.8 },
+    { "fact": "Walter Hale passed away in 2016.", "category": "family", "confidence": 0.9 }
+  ],
+  "episodic_memories": [
+    { "text": "Reading a picture book aloud to a classroom of second graders on a Friday afternoon, the children gathered on a rug.", "emotional_valence": "positive", "era": "career" },
+    { "text": "Standing in the garden in early June, cutting the first roses of the season and bringing them inside in a chipped blue vase.", "emotional_valence": "positive", "era": "adulthood" },
+    { "text": "Walter proposing at the edge of a lake during a summer picnic, nervous and fumbling with the ring box.", "emotional_valence": "positive", "era": "young_adult" },
+    { "text": "Sitting at the kitchen table kneading bread dough on a Sunday morning while the children argued in the next room.", "emotional_valence": "neutral", "era": "adulthood" },
+    { "text": "Her mother being too ill to get out of bed, and Margaret making breakfast for her younger brothers before school.", "emotional_valence": "negative", "era": "childhood" },
+    { "text": "Holding her newborn daughter Susan for the first time in the hospital.", "emotional_valence": "positive", "era": "young_adult" },
+    { "text": "The hospital room where Walter died, the sound of the machines, Susan holding her hand.", "emotional_valence": "negative", "era": "late_adulthood" }
+  ],
+  "sensitive_topics": [
+    "Walter's death",
+    "her mother's illness during childhood",
+    "being asked to recall the current date or year",
+    "being told a deceased family member has died"
+  ],
+  "distress_triggers": [
+    "insisting Walter is deceased when she asks for him",
+    "correcting her when she misidentifies a family member",
+    "quizzing her on facts, names, or dates",
+    "rushing or speaking loudly",
+    "contradicting a confabulated memory directly"
+  ],
+  "redirection_notes": "Responds best to validation-oriented redirection: acknowledging her feelings, gently shifting to a sensory or positive memory (roses, baking, the classroom) rather than correcting factual errors directly."
+}

@@ -1,0 +1,79 @@
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "late-stage-dementia-sim"
+version = "0.1.0"
+description = "Open-source clinical simulation framework for synthetic late-stage (GDS/FAST stage 5-7) dementia behavior generation, grounded in literature-derived statistical priors."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "RayhanM17" }]
+keywords = ["dementia", "clinical-simulation", "llm", "milvus", "mcp", "medical-education"]
+
+dependencies = [
+  "pymilvus[milvus_lite]>=2.4.0",
+  "pydantic>=2.0",
+  "fastmcp>=0.1.0",
+  "ollama>=0.3.0",
+  "google-genai>=0.3.0",
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+  "numpy>=1.26.0",
+  "scipy>=1.11.0",
+  "pandas>=2.1.0",
+  "matplotlib>=3.8.0",
+  "seaborn>=0.13.0",
+  "pytest>=7.4.0",
+  "pytest-cov>=4.1.0",
+  "python-dotenv>=1.0.0",
+  "pre-commit>=3.5.0",
+  "detect-secrets>=1.4.0",
+  "loguru>=0.7.0",
+  "ruff>=0.5.0",
+  "mypy>=1.8.0",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+embeddings = ["sentence-transformers>=2.5.0"]
+
+[project.scripts]
+dementia-sim = "cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/core", "src/memory", "src/behavior", "src/cli"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra --cov=src --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests", "evaluation"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+# E501: line length is handled by the formatter, not the linter.
+# B008: typer's idiomatic `param: T = typer.Option(...)` pattern relies on a
+# function call as the default argument value; this is correct typer usage,
+# not the mutable-default-argument bug B008 normally guards against.
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# These entrypoint scripts insert the repo root/src onto sys.path before
+# importing local packages, so the local imports cannot be at the very top.
+"evaluation/*.py" = ["E402"]
+"tests/test_consistency_checker.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.10"
+mypy_path = "src"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_return_any = false
+disallow_untyped_defs = false
+exclude = ["evaluation/plots", "evaluation/results", "transcripts", "logs"]

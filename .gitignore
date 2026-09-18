@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Env / secrets
+.env
+*.env.local
+
+# Milvus Lite local database files
+*.db
+milvus_patient_memory.db*
+milvus_lite/
+
+# Logs
+logs/*.log
+logs/*.jsonl
+!logs/.gitkeep
+
+# Transcripts (session-generated, not source)
+transcripts/*.json
+!transcripts/.gitkeep
+
+# Evaluation artifacts
+evaluation/results/*.json
+evaluation/results/*.csv
+!evaluation/results/.gitkeep
+evaluation/plots/*.png
+!evaluation/plots/.gitkeep
+
+# Testing / tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
