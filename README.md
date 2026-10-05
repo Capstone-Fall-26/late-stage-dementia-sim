@@ -8,9 +8,9 @@ from academic literature.
 ## What this is
 
 - A **patient simulation engine** (`src/core/patient_engine.py`) that drives
-  an LLM (local Ollama or Google Gemini) to role-play a dementia patient,
-  constrained turn-by-turn by literature-grounded statistical priors
-  (`config/statistical_priors.yaml`).
+  an LLM (local Ollama, Google Gemini, or Azure OpenAI) to role-play a
+  dementia patient, constrained turn-by-turn by literature-grounded
+  statistical priors (`config/statistical_priors.yaml`).
 - A **vector memory system** (`src/memory/`) using Milvus Lite to model
   episodic and biographical patient memory, with simulated retrieval decay
   and confabulation (noise injection).
@@ -122,6 +122,34 @@ https://aistudio.google.com/apikey). Never commit `.env`.
 cp .env.example .env
 ```
 
+### 6b. (Optional) Configure Azure OpenAI (Azure AI Foundry)
+
+Create an Azure OpenAI resource and deploy a chat model (e.g.
+`gpt-4.1-mini`) in [Azure AI Foundry](https://ai.azure.com), then set
+`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`
+(the deployment name, not the base model name), and
+`AZURE_OPENAI_API_VERSION` in `.env`. Never commit `.env`.
+
+Azure currently issues two different endpoint shapes depending on how the
+resource was created -- a classic per-resource endpoint
+(`https://<resource>.openai.azure.com`) and a newer Azure AI Foundry
+project endpoint (containing `/openai/v1`, e.g. `.../openai/v1/responses`).
+Paste whichever one your resource gives you into `AZURE_OPENAI_ENDPOINT`
+as-is; the backend detects which API shape it is and talks to it
+correctly either way.
+
+Whichever backend you configure, verify credentials and connectivity
+before starting a full session:
+
+```bash
+python -m cli.app test-connection --backend ollama
+python -m cli.app test-connection --backend gemini
+python -m cli.app test-connection --backend azure
+```
+
+Each sends one minimal prompt and reports success/failure with latency,
+without touching memory or the patient profile.
+
 ### 7. Run the interactive CLI
 
 ```bash
@@ -133,6 +161,9 @@ python -m cli.app chat --backend ollama --model llama3.2:3b
 
 # Gemini:
 python -m cli.app chat --backend gemini --model gemini-flash-lite-latest
+
+# Azure OpenAI (deployment name from .env, e.g. gpt-4.1-mini, or pass --model explicitly):
+python -m cli.app chat --backend azure
 ```
 
 Type `quit` or press `Ctrl+C` to end a session; the full transcript is
