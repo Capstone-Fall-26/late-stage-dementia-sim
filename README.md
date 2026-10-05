@@ -122,10 +122,10 @@ https://aistudio.google.com/apikey). Never commit `.env`.
 cp .env.example .env
 ```
 
-### 6b. (Optional) Configure Azure OpenAI
+### 6b. (Optional) Configure Azure OpenAI (Azure AI Foundry)
 
-Create an Azure OpenAI resource and deploy a chat model in
-[Azure OpenAI Studio](https://oai.azure.com), then set
+Create an Azure OpenAI resource and deploy a chat model (e.g.
+`gpt-4.1-mini`) in [Azure AI Foundry](https://ai.azure.com), then set
 `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`
 (the deployment name, not the base model name), and
 `AZURE_OPENAI_API_VERSION` in `.env`. Never commit `.env`.
@@ -154,7 +154,7 @@ python -m cli.app chat --backend ollama --model llama3.2:3b
 # Gemini:
 python -m cli.app chat --backend gemini --model gemini-flash-lite-latest
 
-# Azure OpenAI (deployment name from .env, or pass --model explicitly):
+# Azure OpenAI (deployment name from .env, e.g. gpt-4.1-mini, or pass --model explicitly):
 python -m cli.app chat --backend azure
 ```
 
