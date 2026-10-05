@@ -6,6 +6,7 @@ Usage:
     dementia-sim chat --backend ollama --model llama3.2:3b
     dementia-sim chat --backend gemini --model gemini-flash-lite-latest
     dementia-sim chat --backend azure --model my-gpt4o-mini-deployment
+    dementia-sim test-connection --backend ollama
     dementia-sim seed-memory
     dementia-sim list-profiles
 """
@@ -13,7 +14,7 @@ Usage:
 from __future__ import annotations
 
 import json
-import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from core.llm_config import resolve_llm_config
+from core.llm_providers import get_llm_provider
 from core.models import EngineTurnResult, load_patient_profile
 from core.patient_engine import PatientEngine
 from memory.client import PatientMemoryClient
@@ -83,8 +86,8 @@ def chat(
         None,
         "--model",
         "-m",
-        help="Model/deployment name for the chosen backend. Defaults to "
-        "'llama3.2:3b' (ollama) or $AZURE_OPENAI_DEPLOYMENT (azure) if omitted.",
+        help="Model/deployment name for the chosen backend. Falls back to the "
+        "backend's env var (OLLAMA_MODEL, GEMINI_MODEL, AZURE_OPENAI_DEPLOYMENT) if omitted.",
     ),
     db_path: Path = typer.Option(
         _DEFAULT_DB_PATH, "--db-path", help="Milvus Lite database file path."
@@ -98,36 +101,18 @@ def chat(
     ),
 ) -> None:
     """Run an interactive trainee <-> simulated-patient chat session."""
-    api_key = os.environ.get("GEMINI_API_KEY") if backend == "gemini" else None
-    host = os.environ.get("OLLAMA_HOST") if backend == "ollama" else None
-    endpoint = None
-    api_version = None
-    if backend == "azure":
-        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
-        api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
-        resolved_model: str = (
-            model if model is not None else os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
-        )
-    elif backend == "gemini":
-        resolved_model = (
-            model
-            if model is not None
-            else os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
-        )
-    else:
-        resolved_model = model if model is not None else "llama3.2:3b"
+    cfg = resolve_llm_config(backend, model)
 
     try:
         engine = PatientEngine.from_config(
             profile_path=profile,
             priors_path=priors,
-            backend=backend,
-            model=resolved_model,
-            api_key=api_key,
-            host=host,
-            endpoint=endpoint,
-            api_version=api_version,
+            backend=cfg.backend,
+            model=cfg.model,
+            api_key=cfg.api_key,
+            host=cfg.host,
+            endpoint=cfg.endpoint,
+            api_version=cfg.api_version,
             db_path=db_path,
             embedding_backend=embedding_backend,
             seed=seed,
@@ -179,6 +164,45 @@ def chat(
         if transcript:
             _save_transcript(transcript, engine.profile.patient_id, session_start)
         engine.close()
+
+
+@app.command("test-connection")
+def test_connection(
+    backend: str = typer.Option("mock", "--backend", "-b", help="ollama | gemini | azure | mock"),
+    model: str | None = typer.Option(
+        None, "--model", "-m", help="Override the backend's default model/deployment."
+    ),
+) -> None:
+    """Send a single test prompt to the configured backend and report the result.
+
+    A quick way to confirm credentials and connectivity (Ollama daemon
+    reachable, Gemini/Azure API key and endpoint valid) before starting a
+    full chat session.
+    """
+    cfg = resolve_llm_config(backend, model)
+    console.print(f"Testing [bold]{cfg.backend}[/bold] backend (model: {cfg.model!r})...")
+
+    try:
+        provider = get_llm_provider(
+            backend=cfg.backend,
+            model=cfg.model,
+            api_key=cfg.api_key,
+            host=cfg.host,
+            endpoint=cfg.endpoint,
+            api_version=cfg.api_version,
+        )
+        start = time.perf_counter()
+        reply = provider.generate(
+            system_prompt="You are a connectivity check. Reply with only the word OK.",
+            messages=[{"role": "user", "content": "Reply with only the word OK."}],
+        )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+    except Exception as exc:
+        console.print(f"[red]Connection failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]Connected[/green] in {elapsed_ms:.0f}ms")
+    console.print(f"Response: {reply.strip()!r}")
 
 
 @app.command("seed-memory")

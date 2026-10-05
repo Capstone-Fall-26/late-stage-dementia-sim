@@ -130,6 +130,18 @@ Create an Azure OpenAI resource and deploy a chat model in
 (the deployment name, not the base model name), and
 `AZURE_OPENAI_API_VERSION` in `.env`. Never commit `.env`.
 
+Whichever backend you configure, verify credentials and connectivity
+before starting a full session:
+
+```bash
+python -m cli.app test-connection --backend ollama
+python -m cli.app test-connection --backend gemini
+python -m cli.app test-connection --backend azure
+```
+
+Each sends one minimal prompt and reports success/failure with latency,
+without touching memory or the patient profile.
+
 ### 7. Run the interactive CLI
 
 ```bash
