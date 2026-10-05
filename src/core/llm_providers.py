@@ -1,8 +1,9 @@
-"""Pluggable LLM backend interface: local Ollama or Google Gemini.
+"""Pluggable LLM backend interface: local Ollama, Google Gemini, or Azure OpenAI.
 
 `PatientEngine` depends only on the `LLMProvider` protocol, never on a
 concrete backend, so switching between a local `llama3.2:3b`/`mistral`
-model and Gemini Flash-Lite is a one-line config change.
+model, Gemini Flash-Lite, and an Azure OpenAI deployment is a one-line
+config change.
 
 A `MockProvider` is also provided: a deterministic, network-free backend
 used by the automated benchmarking suite and test suite so that CI and
@@ -90,6 +91,69 @@ class GeminiProvider:
         return response.text or ""
 
 
+class AzureOpenAIProvider:
+    """Azure OpenAI backend via the `openai` SDK's `AzureOpenAI` client.
+
+    `model` is the Azure *deployment name* (not the underlying model name),
+    since that's what the Azure OpenAI chat-completions endpoint expects.
+    """
+
+    _ROLE_MAP = {"assistant": "assistant", "user": "user"}
+
+    def __init__(
+        self,
+        model: str,
+        api_key: str | None = None,
+        endpoint: str | None = None,
+        api_version: str = "2024-10-21",
+    ) -> None:
+        try:
+            from openai import AzureOpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "The 'openai' package is required for AzureOpenAIProvider. Install it "
+                "with `pip install openai`."
+            ) from exc
+        if not api_key:
+            raise ValueError(
+                "AzureOpenAIProvider requires a non-empty api_key (set AZURE_OPENAI_API_KEY)."
+            )
+        if not endpoint:
+            raise ValueError(
+                "AzureOpenAIProvider requires a non-empty endpoint (set AZURE_OPENAI_ENDPOINT)."
+            )
+        if not model:
+            raise ValueError(
+                "AzureOpenAIProvider requires a non-empty deployment name (set "
+                "AZURE_OPENAI_DEPLOYMENT)."
+            )
+        self.model = model
+        self._client = AzureOpenAI(
+            api_key=api_key,
+            azure_endpoint=endpoint,
+            api_version=api_version,
+        )
+
+    def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
+        full_messages = [
+            {"role": "system", "content": system_prompt},
+            *(
+                {"role": self._ROLE_MAP.get(m["role"], "user"), "content": m["content"]}
+                for m in messages
+            ),
+        ]
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model,
+                messages=full_messages,  # type: ignore[arg-type]
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                f"Azure OpenAI generation failed for deployment '{self.model}': {exc}"
+            ) from exc
+        return response.choices[0].message.content or ""
+
+
 class MockProvider:
     """Deterministic, network-free LLM backend for tests and benchmarking.
 
@@ -135,12 +199,23 @@ def get_llm_provider(
     model: str,
     api_key: str | None = None,
     host: str | None = None,
+    endpoint: str | None = None,
+    api_version: str | None = None,
 ) -> LLMProvider:
-    """Factory for LLM backends: "ollama", "gemini", or "mock"."""
+    """Factory for LLM backends: "ollama", "gemini", "azure", or "mock"."""
     if backend == "ollama":
         return OllamaProvider(model=model, host=host)
     if backend == "gemini":
         return GeminiProvider(model=model, api_key=api_key)
+    if backend == "azure":
+        return AzureOpenAIProvider(
+            model=model,
+            api_key=api_key,
+            endpoint=endpoint,
+            api_version=api_version or "2024-10-21",
+        )
     if backend == "mock":
         return MockProvider()
-    raise ValueError(f"Unknown LLM backend: {backend!r}. Expected 'ollama', 'gemini', or 'mock'.")
+    raise ValueError(
+        f"Unknown LLM backend: {backend!r}. Expected 'ollama', 'gemini', 'azure', or 'mock'."
+    )

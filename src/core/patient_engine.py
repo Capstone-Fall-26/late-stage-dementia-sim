@@ -87,6 +87,8 @@ class PatientEngine:
         model: str,
         api_key: str | None = None,
         host: str | None = None,
+        endpoint: str | None = None,
+        api_version: str | None = None,
         db_path: str | Path = "./milvus_patient_memory.db",
         embedding_backend: str = "hashing",
         seed: int | None = None,
@@ -94,7 +96,14 @@ class PatientEngine:
         """Convenience constructor: load config, wire dependencies, seed memory."""
         profile = load_patient_profile(profile_path)
         priors = load_statistical_priors(priors_path)
-        llm = get_llm_provider(backend=backend, model=model, api_key=api_key, host=host)
+        llm = get_llm_provider(
+            backend=backend,
+            model=model,
+            api_key=api_key,
+            host=host,
+            endpoint=endpoint,
+            api_version=api_version,
+        )
         embedder = get_embedder(embedding_backend)
         memory_client = PatientMemoryClient(db_path=db_path)
         rng = np.random.default_rng(seed)

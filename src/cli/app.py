@@ -5,6 +5,7 @@ Usage:
     dementia-sim chat --backend mock
     dementia-sim chat --backend ollama --model llama3.2:3b
     dementia-sim chat --backend gemini --model gemini-flash-lite-latest
+    dementia-sim chat --backend azure --model my-gpt4o-mini-deployment
     dementia-sim seed-memory
     dementia-sim list-profiles
 """
@@ -77,9 +78,13 @@ def chat(
     priors: Path = typer.Option(
         _DEFAULT_PRIORS, "--priors", help="Path to statistical priors YAML."
     ),
-    backend: str = typer.Option("mock", "--backend", "-b", help="ollama | gemini | mock"),
-    model: str = typer.Option(
-        "llama3.2:3b", "--model", "-m", help="Model name for the chosen backend."
+    backend: str = typer.Option("mock", "--backend", "-b", help="ollama | gemini | azure | mock"),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        "-m",
+        help="Model/deployment name for the chosen backend. Defaults to "
+        "'llama3.2:3b' (ollama) or $AZURE_OPENAI_DEPLOYMENT (azure) if omitted.",
     ),
     db_path: Path = typer.Option(
         _DEFAULT_DB_PATH, "--db-path", help="Milvus Lite database file path."
@@ -95,15 +100,34 @@ def chat(
     """Run an interactive trainee <-> simulated-patient chat session."""
     api_key = os.environ.get("GEMINI_API_KEY") if backend == "gemini" else None
     host = os.environ.get("OLLAMA_HOST") if backend == "ollama" else None
+    endpoint = None
+    api_version = None
+    if backend == "azure":
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+        api_version = os.environ.get("AZURE_OPENAI_API_VERSION")
+        resolved_model: str = (
+            model if model is not None else os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
+        )
+    elif backend == "gemini":
+        resolved_model = (
+            model
+            if model is not None
+            else os.environ.get("GEMINI_MODEL", "gemini-flash-lite-latest")
+        )
+    else:
+        resolved_model = model if model is not None else "llama3.2:3b"
 
     try:
         engine = PatientEngine.from_config(
             profile_path=profile,
             priors_path=priors,
             backend=backend,
-            model=model,
+            model=resolved_model,
             api_key=api_key,
             host=host,
+            endpoint=endpoint,
+            api_version=api_version,
             db_path=db_path,
             embedding_backend=embedding_backend,
             seed=seed,

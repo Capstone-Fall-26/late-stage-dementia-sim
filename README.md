@@ -8,9 +8,9 @@ from academic literature.
 ## What this is
 
 - A **patient simulation engine** (`src/core/patient_engine.py`) that drives
-  an LLM (local Ollama or Google Gemini) to role-play a dementia patient,
-  constrained turn-by-turn by literature-grounded statistical priors
-  (`config/statistical_priors.yaml`).
+  an LLM (local Ollama, Google Gemini, or Azure OpenAI) to role-play a
+  dementia patient, constrained turn-by-turn by literature-grounded
+  statistical priors (`config/statistical_priors.yaml`).
 - A **vector memory system** (`src/memory/`) using Milvus Lite to model
   episodic and biographical patient memory, with simulated retrieval decay
   and confabulation (noise injection).
@@ -122,6 +122,14 @@ https://aistudio.google.com/apikey). Never commit `.env`.
 cp .env.example .env
 ```
 
+### 6b. (Optional) Configure Azure OpenAI
+
+Create an Azure OpenAI resource and deploy a chat model in
+[Azure OpenAI Studio](https://oai.azure.com), then set
+`AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_DEPLOYMENT`
+(the deployment name, not the base model name), and
+`AZURE_OPENAI_API_VERSION` in `.env`. Never commit `.env`.
+
 ### 7. Run the interactive CLI
 
 ```bash
@@ -133,6 +141,9 @@ python -m cli.app chat --backend ollama --model llama3.2:3b
 
 # Gemini:
 python -m cli.app chat --backend gemini --model gemini-flash-lite-latest
+
+# Azure OpenAI (deployment name from .env, or pass --model explicitly):
+python -m cli.app chat --backend azure
 ```
 
 Type `quit` or press `Ctrl+C` to end a session; the full transcript is
