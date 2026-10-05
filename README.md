@@ -130,6 +130,14 @@ Create an Azure OpenAI resource and deploy a chat model (e.g.
 (the deployment name, not the base model name), and
 `AZURE_OPENAI_API_VERSION` in `.env`. Never commit `.env`.
 
+Azure currently issues two different endpoint shapes depending on how the
+resource was created -- a classic per-resource endpoint
+(`https://<resource>.openai.azure.com`) and a newer Azure AI Foundry
+project endpoint (containing `/openai/v1`, e.g. `.../openai/v1/responses`).
+Paste whichever one your resource gives you into `AZURE_OPENAI_ENDPOINT`
+as-is; the backend detects which API shape it is and talks to it
+correctly either way.
+
 Whichever backend you configure, verify credentials and connectivity
 before starting a full session:
 
