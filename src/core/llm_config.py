@@ -45,7 +45,9 @@ def resolve_llm_config(backend: str, model: str | None = None) -> LLMConfig:
         resolved_model = (
             model if model is not None else os.environ.get("GEMINI_MODEL", _GEMINI_DEFAULT_MODEL)
         )
-        return LLMConfig(backend=backend, model=resolved_model, api_key=os.environ.get("GEMINI_API_KEY"))
+        return LLMConfig(
+            backend=backend, model=resolved_model, api_key=os.environ.get("GEMINI_API_KEY")
+        )
     if backend == "azure":
         resolved_model = (
             model if model is not None else os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
@@ -59,6 +61,4 @@ def resolve_llm_config(backend: str, model: str | None = None) -> LLMConfig:
         )
     if backend == "mock":
         return LLMConfig(backend=backend, model=model if model is not None else "mock")
-    raise ValueError(
-        f"Unknown LLM backend: {backend!r}. Expected one of {_SUPPORTED_BACKENDS}."
-    )
+    raise ValueError(f"Unknown LLM backend: {backend!r}. Expected one of {_SUPPORTED_BACKENDS}.")

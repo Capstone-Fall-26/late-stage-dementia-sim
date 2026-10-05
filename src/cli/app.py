@@ -191,6 +191,9 @@ def test_connection(
             endpoint=cfg.endpoint,
             api_version=cfg.api_version,
         )
+        api_mode = getattr(provider, "api_mode", None)
+        if api_mode:
+            console.print(f"Detected Azure API shape: [bold]{api_mode}[/bold]")
         start = time.perf_counter()
         reply = provider.generate(
             system_prompt="You are a connectivity check. Reply with only the word OK.",

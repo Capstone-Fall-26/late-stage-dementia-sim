@@ -2,8 +2,8 @@
 
 `PatientEngine` depends only on the `LLMProvider` protocol, never on a
 concrete backend, so switching between a local `llama3.2:3b`/`mistral`
-model, Gemini Flash-Lite, and an Azure OpenAI deployment is a one-line
-config change.
+model, Gemini Flash-Lite, and an Azure OpenAI / Azure AI Foundry
+deployment is a one-line config change.
 
 A `MockProvider` is also provided: a deterministic, network-free backend
 used by the automated benchmarking suite and test suite so that CI and
@@ -92,13 +92,30 @@ class GeminiProvider:
 
 
 class AzureOpenAIProvider:
-    """Azure OpenAI backend via the `openai` SDK's `AzureOpenAI` client.
+    """Azure OpenAI backend, supporting both endpoint shapes Azure currently issues.
 
-    `model` is the Azure *deployment name* (not the underlying model name),
-    since that's what the Azure OpenAI chat-completions endpoint expects.
+    `model` is the Azure *deployment name* (not the underlying model name).
+
+    Azure hands out two incompatible endpoint shapes depending on how the
+    resource was created:
+
+    - **Classic** per-resource endpoint (`https://<resource>.openai.azure.com`):
+      the original Chat Completions API, which requires an `api-version`
+      query parameter. Used via the `openai` SDK's `AzureOpenAI` client.
+    - **Azure AI Foundry v1** endpoint (contains `/openai/v1`, e.g.
+      `https://<resource>.services.ai.azure.com/api/projects/<project>/openai/v1/responses`):
+      the newer, OpenAI-SDK-compatible Responses API. It *rejects* requests
+      that include `api-version`. Used via the plain `openai.OpenAI` client
+      pointed at the endpoint as `base_url`.
+
+    Which shape to use is detected from the endpoint URL, so both Foundry
+    project resources and older standalone Azure OpenAI resources work
+    without extra configuration.
     """
 
     _ROLE_MAP = {"assistant": "assistant", "user": "user"}
+    _RESPONSES_API_PATH_MARKER = "/v1"
+    _STRIPPED_SUFFIXES = ("/responses", "/chat/completions")
 
     def __init__(
         self,
@@ -107,13 +124,6 @@ class AzureOpenAIProvider:
         endpoint: str | None = None,
         api_version: str = "2024-10-21",
     ) -> None:
-        try:
-            from openai import AzureOpenAI
-        except ImportError as exc:
-            raise ImportError(
-                "The 'openai' package is required for AzureOpenAIProvider. Install it "
-                "with `pip install openai`."
-            ) from exc
         if not api_key:
             raise ValueError(
                 "AzureOpenAIProvider requires a non-empty api_key (set AZURE_OPENAI_API_KEY)."
@@ -128,30 +138,73 @@ class AzureOpenAIProvider:
                 "AZURE_OPENAI_DEPLOYMENT)."
             )
         self.model = model
-        self._client = AzureOpenAI(
-            api_key=api_key,
-            azure_endpoint=endpoint,
-            api_version=api_version,
+        base_url = endpoint.rstrip("/")
+        self.api_mode = (
+            "responses" if self._RESPONSES_API_PATH_MARKER in base_url else "chat_completions"
         )
 
+        if self.api_mode == "responses":
+            try:
+                from openai import OpenAI
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'openai' package is required for AzureOpenAIProvider. Install it "
+                    "with `pip install openai`."
+                ) from exc
+            for suffix in self._STRIPPED_SUFFIXES:
+                if base_url.endswith(suffix):
+                    base_url = base_url[: -len(suffix)]
+                    break
+            self._client = OpenAI(base_url=base_url, api_key=api_key)
+        else:
+            try:
+                from openai import AzureOpenAI
+            except ImportError as exc:
+                raise ImportError(
+                    "The 'openai' package is required for AzureOpenAIProvider. Install it "
+                    "with `pip install openai`."
+                ) from exc
+            self._client = AzureOpenAI(
+                api_key=api_key,
+                azure_endpoint=base_url,
+                api_version=api_version,
+            )
+
     def generate(self, system_prompt: str, messages: list[dict[str, str]]) -> str:
-        full_messages = [
-            {"role": "system", "content": system_prompt},
-            *(
-                {"role": self._ROLE_MAP.get(m["role"], "user"), "content": m["content"]}
-                for m in messages
-            ),
-        ]
         try:
-            response = self._client.chat.completions.create(
+            if self.api_mode == "responses":
+                full_input = [
+                    {"type": "message", "role": "system", "content": system_prompt},
+                    *(
+                        {
+                            "type": "message",
+                            "role": self._ROLE_MAP.get(m["role"], "user"),
+                            "content": m["content"],
+                        }
+                        for m in messages
+                    ),
+                ]
+                responses_result = self._client.responses.create(
+                    model=self.model,
+                    input=full_input,  # type: ignore[arg-type]
+                )
+                return responses_result.output_text or ""
+            full_messages = [
+                {"role": "system", "content": system_prompt},
+                *(
+                    {"role": self._ROLE_MAP.get(m["role"], "user"), "content": m["content"]}
+                    for m in messages
+                ),
+            ]
+            chat_result = self._client.chat.completions.create(
                 model=self.model,
                 messages=full_messages,  # type: ignore[arg-type]
             )
+            return chat_result.choices[0].message.content or ""
         except Exception as exc:
             raise RuntimeError(
                 f"Azure OpenAI generation failed for deployment '{self.model}': {exc}"
             ) from exc
-        return response.choices[0].message.content or ""
 
 
 class MockProvider:

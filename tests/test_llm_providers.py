@@ -41,6 +41,33 @@ def test_get_llm_provider_routes_to_azure() -> None:
     assert provider.model == "my-deployment"
 
 
+def test_azure_classic_endpoint_uses_chat_completions_api() -> None:
+    provider = AzureOpenAIProvider(
+        model="my-deployment",
+        api_key="fake-key",  # pragma: allowlist secret
+        endpoint="https://example.openai.azure.com",
+    )
+    assert provider.api_mode == "chat_completions"
+
+
+def test_azure_foundry_v1_endpoint_uses_responses_api() -> None:
+    provider = AzureOpenAIProvider(
+        model="gpt-4.1-mini",
+        api_key="fake-key",  # pragma: allowlist secret
+        endpoint="https://example.services.ai.azure.com/api/projects/demo/openai/v1/responses",
+    )
+    assert provider.api_mode == "responses"
+
+
+def test_azure_foundry_v1_endpoint_without_responses_suffix() -> None:
+    provider = AzureOpenAIProvider(
+        model="gpt-4.1-mini",
+        api_key="fake-key",  # pragma: allowlist secret
+        endpoint="https://example.services.ai.azure.com/api/projects/demo/openai/v1",
+    )
+    assert provider.api_mode == "responses"
+
+
 def test_get_llm_provider_routes_to_mock() -> None:
     assert isinstance(get_llm_provider(backend="mock", model="unused"), MockProvider)
 
