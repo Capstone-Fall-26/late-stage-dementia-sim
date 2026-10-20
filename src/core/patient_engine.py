@@ -10,6 +10,8 @@ conversation:
    (`behavior.symptom_sampler.sample_constraints`).
 4. Recall cognitively-degraded episodic/biographical memories relevant to
    the utterance (`memory.recall.MemoryRecall`), unless memory fog fired.
+   Optionally (``remember_conversation``) encode the utterance as a new,
+   noisy episodic memory (`memory.encoding.MemoryEncoder`).
 5. Compose a dynamic system prompt that encodes the constraints and
    recalled memories without ever breaking character.
 6. Call the configured LLM backend and defensively post-process the
@@ -26,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
-from behavior.distress import DistressTracker, evaluate_trigger
+from behavior.distress import DistressTracker, TriggerAssessment, evaluate_trigger
 from behavior.symptom_sampler import sample_constraints
 from core.llm_providers import LLMProvider, get_llm_provider
 from core.logging_config import get_logger, log_prompt_trace
@@ -43,6 +45,8 @@ from core.models import (
 )
 from memory.client import PatientMemoryClient
 from memory.embeddings import Embedder, get_embedder
+from memory.encoding import MemoryEncoder
+from memory.noise import MemoryNoiseModel, build_confusion_map
 from memory.recall import MemoryRecall
 
 _DISTRESS_INSTRUCTIONS: dict[DistressState, str] = {
@@ -53,6 +57,7 @@ _DISTRESS_INSTRUCTIONS: dict[DistressState, str] = {
 }
 
 _MAX_HISTORY_MESSAGES = 16
+_MAX_ENCODED_CHARS = 300
 
 
 class PatientEngine:
@@ -66,6 +71,7 @@ class PatientEngine:
         memory_client: PatientMemoryClient,
         embedder: Embedder,
         rng: np.random.Generator | None = None,
+        remember_conversation: bool = False,
     ) -> None:
         self.profile = profile
         self.priors = priors
@@ -73,7 +79,10 @@ class PatientEngine:
         self.memory_client = memory_client
         self.embedder = embedder
         self.rng = rng or np.random.default_rng()
-        self.recall = MemoryRecall(memory_client, embedder, priors, rng=self.rng)
+        self.noise = MemoryNoiseModel(rng=self.rng, confusion_map=build_confusion_map(profile))
+        self.recall = MemoryRecall(memory_client, embedder, priors, rng=self.rng, noise=self.noise)
+        self.encoder = MemoryEncoder(memory_client, embedder, self.noise)
+        self.remember_conversation = remember_conversation
         self.distress = DistressTracker(priors, rng=self.rng)
         self.logger = get_logger("patient_engine")
         self._conversation: list[dict[str, str]] = []
@@ -92,6 +101,7 @@ class PatientEngine:
         db_path: str | Path = "./milvus_patient_memory.db",
         embedding_backend: str = "hashing",
         seed: int | None = None,
+        remember_conversation: bool = False,
     ) -> PatientEngine:
         """Convenience constructor: load config, wire dependencies, seed memory."""
         profile = load_patient_profile(profile_path)
@@ -107,7 +117,15 @@ class PatientEngine:
         embedder = get_embedder(embedding_backend)
         memory_client = PatientMemoryClient(db_path=db_path)
         rng = np.random.default_rng(seed)
-        engine = cls(profile, priors, llm, memory_client, embedder, rng=rng)
+        engine = cls(
+            profile,
+            priors,
+            llm,
+            memory_client,
+            embedder,
+            rng=rng,
+            remember_conversation=remember_conversation,
+        )
         engine.seed_memory()
         return engine
 
@@ -157,11 +175,12 @@ class PatientEngine:
             return "Nothing specific surfaces in your mind right now."
         lines = []
         for hit in memory_hits:
-            tag = (
-                " (this memory feels uncertain, possibly mixed up with something else)"
-                if hit.confused
-                else ""
-            )
+            if hit.confused:
+                tag = " (this memory feels uncertain, possibly mixed up with something else)"
+            elif hit.noise_type == "stored_corruption":
+                tag = " (this memory is hazy; some details may be wrong)"
+            else:
+                tag = ""
             lines.append(f"- {hit.text}{tag}")
         return (
             "These fragments surface in your mind right now. Weave them in loosely and "
@@ -269,6 +288,10 @@ class PatientEngine:
 
         self._conversation.append({"role": "assistant", "content": response_text})
 
+        memory_encoded = False
+        if self.remember_conversation:
+            memory_encoded = self._encode_turn(user_input, assessment)
+
         latency_ms = (time.time() - start) * 1000.0
         log_prompt_trace(
             backend=type(self.llm).__name__,
@@ -286,9 +309,24 @@ class PatientEngine:
             distress_state=distress_state,
             constraints=constraints,
             memory_hits=memory_hits,
+            memory_encoded=memory_encoded,
             latency_ms=latency_ms,
             timestamp=time.time(),
         )
+
+    def _encode_turn(self, user_input: str, assessment: TriggerAssessment) -> bool:
+        """Store what the trainee said as a (possibly failed/noisy) memory."""
+        if assessment.pressuring_detected:
+            valence = "negative"
+        elif assessment.redirection_detected:
+            valence = "positive"
+        else:
+            valence = "neutral"
+        snippet = user_input.strip()[:_MAX_ENCODED_CHARS]
+        result = self.encoder.encode_episode(
+            f"A visitor said to you: {snippet}", self.profile.stage, emotional_valence=valence
+        )
+        return result is not None
 
     def close(self) -> None:
         self.memory_client.close()

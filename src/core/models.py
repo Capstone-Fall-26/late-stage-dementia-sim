@@ -200,6 +200,13 @@ class MemoryHit(BaseModel):
     score: float
     collection: str
     confused: bool = False
+    # Why this hit is unreliable: "swap" (a neighboring memory surfaced
+    # instead), "substitution" (details altered at retrieval time) or
+    # "stored_corruption" (the stored record was already degraded). None
+    # means the hit is faithful to what was originally stored.
+    noise_type: str | None = None
+    # Pre-corruption ground truth, when known.
+    original_text: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -210,5 +217,6 @@ class EngineTurnResult(BaseModel):
     distress_state: DistressState
     constraints: SymptomConstraints
     memory_hits: list[MemoryHit]
+    memory_encoded: bool = False
     latency_ms: float
     timestamp: float
