@@ -12,8 +12,10 @@ from academic literature.
   dementia patient, constrained turn-by-turn by literature-grounded
   statistical priors (`config/statistical_priors.yaml`).
 - A **vector memory system** (`src/memory/`) using Milvus Lite to model
-  episodic and biographical patient memory, with simulated retrieval decay
-  and confabulation (noise injection).
+  episodic and biographical patient memory, with simulated retrieval decay,
+  confabulation, persistent corruption of stored memories, failed/noisy
+  encoding of new experiences, and rehearsal. See
+  [Patient memory model](#patient-memory-model).
 - A **behavioral state machine** (`src/behavior/`) sampling per-turn
   symptom constraints (word limits, non-verbal cues, anomia, factual
   inversion) and tracking a coarse emotional/distress state.
@@ -103,6 +105,16 @@ This creates `./milvus_patient_memory.db` and populates the
 `episodic_memory` and `biographical_facts` collections from
 `config/patient_profiles/stage7_late.json`.
 
+Try the memory layer directly (no LLM needed):
+
+```bash
+python -m cli.app recall "tell me about your garden" --stage 7   # degraded lookup
+python -m cli.app add-memory "Susan brought lilies" --stage 6    # may fail / be garbled
+python -m cli.app age-memory --stage 7 --passes 2                # permanent decay
+python -m cli.app memory-stats
+python -m cli.app reset-memory --yes                             # wipe + re-seed
+```
+
 ### 5. (Optional) Pull an Ollama model for local inference
 
 Install [Ollama](https://ollama.com), then pull a small local model:
@@ -169,6 +181,13 @@ python -m cli.app chat --backend azure
 Type `quit` or press `Ctrl+C` to end a session; the full transcript is
 saved as JSON under `transcripts/`.
 
+By default `chat` also *encodes what the trainee says as new patient
+memories* (`--remember`, on by default). At later stages that encoding often
+fails or stores a garbled version, and those memories can surface in later
+turns. Pass `--no-remember` for a read-only session. Note that memories
+persist in the database file across sessions; use `reset-memory` to start
+clean.
+
 Other CLI commands:
 
 ```bash
@@ -184,8 +203,52 @@ python -m behavior.mcp_server
 
 Exposes `sample_symptom_constraints`, `get_distress_state`,
 `transition_distress_state`, `recall_patient_memory`,
-`get_patient_biographical_fact`, and `get_patient_profile_summary` as MCP
-tools.
+`get_patient_biographical_fact`, `store_patient_memory`,
+`age_patient_memory`, `get_memory_stats`, and `get_patient_profile_summary`
+as MCP tools.
+
+## Patient memory model
+
+Two Milvus collections hold the patient's memory (`src/memory/client.py`):
+`episodic_memory` (autobiographical episodes with an era and emotional
+valence) and `biographical_facts` (discrete facts). The memory layer
+simulates impairment through several independent mechanisms:
+
+| Mechanism | Where | Effect |
+|---|---|---|
+| Era retention (Ribot's law) | `recall.py` | Remote memories (childhood) keep their similarity score; recent ones are attenuated, more steeply at later stages. |
+| Time decay + rehearsal | `recall.py` | Conversation-formed memories decay with real elapsed time; successful retrievals increment `access_count` and give a small, capped boost. |
+| Cue noise | `recall.py` | The query vector is perturbed, so a good cue can still miss. |
+| Retrieval swap | `recall.py` | With stage-dependent probability the top hit is replaced by a neighboring memory (`noise_type="swap"`). |
+| Retrieval substitution | `recall.py` / `noise.py` | Names, relations and numbers in the surfaced text are altered (e.g. Susan -> Ellen, 28 -> 31). |
+| Encoding failure | `encoding.py` | A new experience is not stored at all, with probability rising from stage 5 to 7. |
+| Encoding corruption | `encoding.py` | What is stored is already garbled; the clean text is kept in `original_text`. |
+| Decay pass | `encoding.py` | `age-memory` permanently corrupts a stage-scaled fraction of stored records and re-embeds them, so the vectors drift with the content. |
+
+Each returned `MemoryHit` carries `confused`, `noise_type`
+(`swap`, `substitution`, `swap+substitution`, `stored_corruption`, or
+`None`), and `original_text` when the ground truth is known, so evaluation
+can tell what the patient *should* have recalled.
+
+**LLM integration.** `PatientEngine` recalls episodic and factual memories
+for every trainee utterance (skipped on a "memory fog" turn) and injects them
+into the system prompt, tagging uncertain or hazy ones so the model conveys
+them loosely or incorrectly instead of quoting them. The model sees the
+*degraded* text, never the clean original. Short-term conversational context
+comes from the engine's message history window, independent of the vector
+store.
+
+**Reproducibility.** All noise draws from the injected `numpy` RNG
+(`--seed`). Seeded profile memories are stored clean; persistent corruption
+only occurs through conversation encoding and explicit `age-memory` runs.
+
+**Tuning.** Stage magnitudes live in `NoiseConfig` (`src/memory/noise.py`)
+and the retrieval constants at the top of `recall.py`. Like the statistical
+priors, they are simulation placeholders, not clinical measurements.
+
+**Embedding dimension.** The store is created with the embedder's dimension.
+Opening an existing database with a different embedder raises a clear error;
+run `reset-memory` (or use a new `--db-path`) after switching embedders.
 
 ## Running checks locally
 
@@ -208,10 +271,14 @@ python evaluation/consistency_checker.py
 
 # 3. Generate publication-ready charts into evaluation/plots/:
 python evaluation/generate_charts.py
+
+# 4. Benchmark the memory layer: per-stage top-1 faithful recall and noise rate
+#    over every biographical fact (offline, deterministic per --seed):
+python evaluation/memory_benchmark.py
 ```
 
 Results land in `evaluation/results/` (`benchmark_results.{json,csv}`,
-`consistency_report.json`) and `evaluation/plots/`
+`consistency_report.json`, `memory_benchmark.json`) and `evaluation/plots/`
 (`word_count_by_stage.png`, `distress_transition_heatmap.png`,
 `persona_consistency_vs_turn_depth.png`).
 
@@ -222,7 +289,8 @@ config/                      Statistical priors + patient profiles
 research/                    Literature extraction template/workflow
 src/
   core/                       Domain models, LLM providers, patient engine, logging
-  memory/                     Milvus Lite client, embeddings, degraded recall
+  memory/                     Milvus Lite client, embeddings, degraded recall,
+                              noise model, encoding/decay
   behavior/                   Symptom sampler, distress state machine, MCP server
   cli/                        Typer/rich interactive CLI
 evaluation/                   Benchmark runner, consistency checker, chart generator

@@ -28,6 +28,8 @@ from behavior.symptom_sampler import sample_constraints
 from core.models import DistressState, Stage, load_patient_profile, load_statistical_priors
 from memory.client import EPISODIC_COLLECTION, FACTS_COLLECTION, PatientMemoryClient
 from memory.embeddings import get_embedder
+from memory.encoding import MemoryEncoder
+from memory.noise import MemoryNoiseModel, build_confusion_map
 from memory.recall import MemoryRecall
 
 load_dotenv()
@@ -52,7 +54,9 @@ _profile = load_patient_profile(_PROFILE_PATH)
 _embedder = get_embedder(_EMBEDDING_BACKEND)
 _memory_client = PatientMemoryClient(db_path=_MILVUS_DB_PATH)
 _memory_client.seed_from_profile(_profile, _embedder)
-_recall = MemoryRecall(_memory_client, _embedder, _priors)
+_noise = MemoryNoiseModel(confusion_map=build_confusion_map(_profile))
+_recall = MemoryRecall(_memory_client, _embedder, _priors, noise=_noise)
+_encoder = MemoryEncoder(_memory_client, _embedder, _noise)
 
 _sessions: dict[str, DistressTracker] = {}
 
@@ -143,6 +147,45 @@ def get_patient_biographical_fact(topic: str, stage: int = 7) -> dict:
     """
     hits = _recall.recall(topic, FACTS_COLLECTION, Stage(stage), top_k=3)
     return {"hits": [hit.model_dump(mode="json") for hit in hits]}
+
+
+@mcp.tool
+def store_patient_memory(text: str, stage: int, emotional_valence: str = "neutral") -> dict:
+    """Encode a new experience into the patient's episodic memory.
+
+    At later stages encoding may fail outright (the patient does not retain
+    it) or the stored text may be corrupted; the result says which happened.
+
+    Args:
+        text: the experience, written from the patient's perspective.
+        stage: GDS/FAST stage, one of 5, 6, 7.
+        emotional_valence: "positive", "neutral" or "negative".
+    """
+    result = _encoder.encode_episode(text, Stage(stage), emotional_valence=emotional_valence)
+    if result is None:
+        return {"stored": False}
+    return {
+        "stored": True,
+        "corrupted": result.corrupted,
+        "stored_text": result.stored_text,
+        "original_text": result.original_text,
+    }
+
+
+@mcp.tool
+def age_patient_memory(stage: int) -> dict:
+    """Run one decay pass, permanently corrupting a stage-scaled fraction of memories.
+
+    Args:
+        stage: GDS/FAST stage, one of 5, 6, 7.
+    """
+    return {"altered": _encoder.decay_pass(Stage(stage))}
+
+
+@mcp.tool
+def get_memory_stats() -> dict:
+    """Row, conversation-sourced and corrupted counts for each memory collection."""
+    return _memory_client.stats()
 
 
 @mcp.tool

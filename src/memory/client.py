@@ -10,6 +10,12 @@ required. Two collections are auto-created on first use:
 - `biographical_facts`: discrete factual statements (career, family, etc.)
   used both for grounding responses and for consistency checking in the
   evaluation suite.
+
+Records carry dynamic fields beyond the vector: `source` ("seed" or
+"conversation"), `access_count`/`last_accessed` (rehearsal), and, once a
+record has been degraded, `corrupted`, `corruption_level` and
+`original_text`/`original_fact` (the pre-corruption ground truth, kept so
+evaluation can tell what the patient *should* have remembered).
 """
 
 from __future__ import annotations
@@ -49,10 +55,24 @@ class PatientMemoryClient:
                     enable_dynamic_field=True,
                     metric_type="COSINE",
                 )
+            else:
+                self._check_dimension(name)
             # Collections created by a previous process/connection persist on
             # disk but are not automatically loaded into memory for search on
             # a fresh connection -- load explicitly every time.
             self._client.load_collection(collection_name=name)
+
+    def _check_dimension(self, name: str) -> None:
+        """Fail loudly if an existing collection was built with another embedder."""
+        for field in self._client.describe_collection(collection_name=name)["fields"]:
+            if field["name"] == "vector":
+                existing = int(field["params"]["dim"])
+                if existing != self.dim:
+                    raise ValueError(
+                        f"Collection '{name}' in {self.db_path} has dimension {existing}, but "
+                        f"the current embedder produces {self.dim}. Re-seed with "
+                        "`reset-memory`, or point --db-path at a new file."
+                    )
 
     # ------------------------------------------------------------------ #
     # Inserts
@@ -66,17 +86,19 @@ class PatientMemoryClient:
         era: str,
         timestamp: float | None = None,
         extra: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         record: dict[str, Any] = {
             "vector": embedding.tolist(),
             "text": text,
             "emotional_valence": emotional_valence,
             "era": era,
             "timestamp": timestamp if timestamp is not None else time.time(),
+            "source": "seed",
+            "access_count": 0,
         }
         if extra:
             record.update(extra)
-        self._client.insert(collection_name=EPISODIC_COLLECTION, data=[record])
+        return self._insert(EPISODIC_COLLECTION, record)
 
     def insert_biographical_fact(
         self,
@@ -85,17 +107,23 @@ class PatientMemoryClient:
         category: str,
         confidence: float,
         extra: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> int:
         record: dict[str, Any] = {
             "vector": embedding.tolist(),
             "fact": fact,
             "category": category,
             "confidence": confidence,
             "timestamp": time.time(),
+            "source": "seed",
+            "access_count": 0,
         }
         if extra:
             record.update(extra)
-        self._client.insert(collection_name=FACTS_COLLECTION, data=[record])
+        return self._insert(FACTS_COLLECTION, record)
+
+    def _insert(self, collection_name: str, record: dict[str, Any]) -> int:
+        result = self._client.insert(collection_name=collection_name, data=[record])
+        return int(list(result["ids"])[0])
 
     def seed_from_profile(self, profile: PatientProfile, embedder: Embedder) -> dict[str, int]:
         """Idempotently seed both collections from a PatientProfile.
@@ -152,6 +180,13 @@ class PatientMemoryClient:
             "era",
             "category",
             "confidence",
+            "timestamp",
+            "source",
+            "access_count",
+            "corrupted",
+            "corruption_level",
+            "original_text",
+            "original_fact",
         ]
         raw = self._client.search(
             collection_name=collection_name,
@@ -172,6 +207,75 @@ class PatientMemoryClient:
                     merged[field] = hit[field]
             hits.append(merged)
         return hits
+
+    def get_record(self, collection_name: str, record_id: int) -> dict[str, Any] | None:
+        """Fetch one full record (including its vector), or None if absent."""
+        rows = self._client.get(
+            collection_name=collection_name, ids=[record_id], output_fields=["*"]
+        )
+        return dict(rows[0]) if rows else None
+
+    def all_records(
+        self, collection_name: str, include_vectors: bool = False
+    ) -> list[dict[str, Any]]:
+        """Return every record in a collection (patient memories are small)."""
+        rows = self._client.query(
+            collection_name=collection_name, filter="id >= 0", output_fields=["*"], limit=16384
+        )
+        out = [dict(r) for r in rows]
+        if not include_vectors:
+            for row in out:
+                row.pop("vector", None)
+        return out
+
+    def update_record(
+        self,
+        collection_name: str,
+        record_id: int,
+        changes: dict[str, Any],
+        vector: np.ndarray | None = None,
+    ) -> None:
+        """Merge `changes` (and optionally a new vector) into a stored record.
+
+        Implemented as an upsert on the same primary key, so the id is stable.
+        """
+        record = self.get_record(collection_name, record_id)
+        if record is None:
+            raise KeyError(f"No record with id {record_id} in '{collection_name}'")
+        record.update(changes)
+        if vector is not None:
+            record["vector"] = vector.tolist()
+        self._client.upsert(collection_name=collection_name, data=[record])
+
+    def touch(self, collection_name: str, record_ids: list[int]) -> None:
+        """Record a successful retrieval (rehearsal) for each id."""
+        now = time.time()
+        for record_id in record_ids:
+            record = self.get_record(collection_name, record_id)
+            if record is None:
+                continue
+            record["access_count"] = int(record.get("access_count", 0)) + 1
+            record["last_accessed"] = now
+            self._client.upsert(collection_name=collection_name, data=[record])
+
+    def reset(self) -> None:
+        """Drop and recreate both collections, discarding all memories."""
+        for name in (EPISODIC_COLLECTION, FACTS_COLLECTION):
+            if self._client.has_collection(collection_name=name):
+                self._client.drop_collection(collection_name=name)
+        self._ensure_collections()
+
+    def stats(self) -> dict[str, dict[str, int]]:
+        """Per-collection row, conversation-sourced and corrupted counts."""
+        out: dict[str, dict[str, int]] = {}
+        for name in (EPISODIC_COLLECTION, FACTS_COLLECTION):
+            rows = self.all_records(name)
+            out[name] = {
+                "rows": len(rows),
+                "from_conversation": sum(r.get("source") == "conversation" for r in rows),
+                "corrupted": sum(bool(r.get("corrupted")) for r in rows),
+            }
+        return out
 
     def count(self, collection_name: str) -> int:
         try:

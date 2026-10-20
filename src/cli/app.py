@@ -8,6 +8,11 @@ Usage:
     dementia-sim chat --backend azure --model my-gpt4o-mini-deployment
     dementia-sim test-connection --backend ollama
     dementia-sim seed-memory
+    dementia-sim recall "tell me about your garden" --stage 7
+    dementia-sim add-memory "Susan brought lilies today" --stage 6
+    dementia-sim age-memory --stage 7
+    dementia-sim memory-stats
+    dementia-sim reset-memory
     dementia-sim list-profiles
 """
 
@@ -18,6 +23,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import typer
 from dotenv import load_dotenv
 from rich.console import Console
@@ -27,10 +33,18 @@ from rich.table import Table
 
 from core.llm_config import resolve_llm_config
 from core.llm_providers import get_llm_provider
-from core.models import EngineTurnResult, load_patient_profile
+from core.models import (
+    EngineTurnResult,
+    Stage,
+    load_patient_profile,
+    load_statistical_priors,
+)
 from core.patient_engine import PatientEngine
-from memory.client import PatientMemoryClient
+from memory.client import EPISODIC_COLLECTION, FACTS_COLLECTION, PatientMemoryClient
 from memory.embeddings import get_embedder
+from memory.encoding import MemoryEncoder
+from memory.noise import MemoryNoiseModel, build_confusion_map
+from memory.recall import MemoryRecall
 
 load_dotenv()
 
@@ -49,6 +63,9 @@ def _print_debug_panel(result: EngineTurnResult) -> None:
     )
     table.add_row("State", f"[bold]{result.distress_state.value.capitalize()}[/bold]")
     table.add_row("Memory Retrieval", memory_status)
+    noisy = sum(1 for h in result.memory_hits if h.noise_type)
+    table.add_row("Noisy hits", f"{noisy}/{len(result.memory_hits)}")
+    table.add_row("Memory encoded", str(result.memory_encoded))
     table.add_row("Non-verbal sampled", str(bool(result.constraints.nonverbal_cue)))
     table.add_row("Max words", str(result.constraints.max_words))
     table.add_row("Factual inversion", str(result.constraints.factual_inversion))
@@ -99,6 +116,11 @@ def chat(
     debug: bool = typer.Option(
         True, "--debug/--no-debug", help="Show live debug panel after each turn."
     ),
+    remember: bool = typer.Option(
+        True,
+        "--remember/--no-remember",
+        help="Encode what the trainee says as new (noisy, possibly failed) patient memories.",
+    ),
 ) -> None:
     """Run an interactive trainee <-> simulated-patient chat session."""
     cfg = resolve_llm_config(backend, model)
@@ -116,6 +138,7 @@ def chat(
             db_path=db_path,
             embedding_backend=embedding_backend,
             seed=seed,
+            remember_conversation=remember,
         )
     except Exception as exc:
         console.print(f"[red]Failed to initialize patient engine: {exc}[/red]")
@@ -154,6 +177,7 @@ def chat(
                     "distress_state": result.distress_state.value,
                     "constraints": result.constraints.model_dump(),
                     "memory_hits": [hit.model_dump() for hit in result.memory_hits],
+                    "memory_encoded": result.memory_encoded,
                     "latency_ms": result.latency_ms,
                     "timestamp": result.timestamp,
                 }
@@ -221,6 +245,156 @@ def seed_memory(
     counts = client.seed_from_profile(profile_obj, embedder)
     client.close()
     console.print(f"[green]Seeded memory for {profile_obj.name}: {counts}[/green]")
+
+
+def _parse_stage(stage: int) -> Stage:
+    try:
+        return Stage(stage)
+    except ValueError as exc:
+        console.print("[red]--stage must be 5, 6, or 7[/red]")
+        raise typer.Exit(code=1) from exc
+
+
+def _open_memory(
+    profile: Path, db_path: Path, embedding_backend: str, seed: int | None
+) -> tuple[PatientMemoryClient, MemoryRecall, MemoryEncoder]:
+    """Open + seed the store and build recall/encoder sharing one noise model."""
+    profile_obj = load_patient_profile(profile)
+    priors = load_statistical_priors(_DEFAULT_PRIORS)
+    embedder = get_embedder(embedding_backend)
+    client = PatientMemoryClient(db_path=db_path, dim=embedder.dim)
+    client.seed_from_profile(profile_obj, embedder)
+    rng = np.random.default_rng(seed)
+    noise = MemoryNoiseModel(rng=rng, confusion_map=build_confusion_map(profile_obj))
+    recall = MemoryRecall(client, embedder, priors, rng=rng, noise=noise)
+    return client, recall, MemoryEncoder(client, embedder, noise)
+
+
+@app.command("recall")
+def recall_cmd(
+    query: str = typer.Argument(..., help="Natural-language cue, as a trainee might say it."),
+    stage: int = typer.Option(7, "--stage", help="GDS/FAST stage: 5, 6 or 7."),
+    collection: str = typer.Option("episodic", "--collection", "-c", help="episodic | facts"),
+    top_k: int = typer.Option(3, "--top-k", "-k"),
+    profile: Path = typer.Option(_DEFAULT_PROFILE, "--profile", "-p"),
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    seed: int | None = typer.Option(None, "--seed"),
+    reinforce: bool = typer.Option(
+        False, "--reinforce/--no-reinforce", help="Count this lookup as rehearsal."
+    ),
+) -> None:
+    """Try a degraded memory lookup and show what surfaced (and what was corrupted)."""
+    stage_enum = _parse_stage(stage)
+    name = FACTS_COLLECTION if collection.startswith("fact") else EPISODIC_COLLECTION
+    client, recall, _ = _open_memory(profile, db_path, embedding_backend, seed)
+    try:
+        hits = recall.recall(query, name, stage_enum, top_k=top_k, reinforce=reinforce)
+    finally:
+        client.close()
+
+    table = Table(title=f"Recall (stage {stage_enum.value}): {query!r}")
+    table.add_column("Score", justify="right")
+    table.add_column("Noise")
+    table.add_column("Surfaced")
+    table.add_column("Original (if altered)")
+    for hit in hits:
+        table.add_row(
+            f"{hit.score:.3f}",
+            hit.noise_type or "-",
+            hit.text,
+            hit.original_text if hit.original_text and hit.original_text != hit.text else "",
+        )
+    console.print(table)
+
+
+@app.command("add-memory")
+def add_memory(
+    text: str = typer.Argument(..., help="Experience to encode into episodic memory."),
+    stage: int = typer.Option(7, "--stage", help="GDS/FAST stage: 5, 6 or 7."),
+    valence: str = typer.Option("neutral", "--valence", help="positive | neutral | negative"),
+    profile: Path = typer.Option(_DEFAULT_PROFILE, "--profile", "-p"),
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    seed: int | None = typer.Option(None, "--seed"),
+) -> None:
+    """Encode a new experience; at later stages it may fail to stick or be stored garbled."""
+    stage_enum = _parse_stage(stage)
+    client, _, encoder = _open_memory(profile, db_path, embedding_backend, seed)
+    try:
+        result = encoder.encode_episode(text, stage_enum, emotional_valence=valence)
+    finally:
+        client.close()
+    if result is None:
+        console.print("[yellow]Encoding failed -- the patient did not retain this.[/yellow]")
+    elif result.corrupted:
+        console.print(f"[yellow]Stored with corruption:[/yellow] {result.stored_text!r}")
+        console.print(f"Original: {result.original_text!r}")
+    else:
+        console.print(f"[green]Stored intact:[/green] {result.stored_text!r}")
+
+
+@app.command("age-memory")
+def age_memory(
+    stage: int = typer.Option(7, "--stage", help="GDS/FAST stage: 5, 6 or 7."),
+    passes: int = typer.Option(1, "--passes", min=1, help="Number of decay passes to run."),
+    profile: Path = typer.Option(_DEFAULT_PROFILE, "--profile", "-p"),
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    seed: int | None = typer.Option(None, "--seed"),
+) -> None:
+    """Permanently corrupt a stage-scaled fraction of stored memories (simulates progression)."""
+    stage_enum = _parse_stage(stage)
+    client, _, encoder = _open_memory(profile, db_path, embedding_backend, seed)
+    try:
+        for i in range(passes):
+            altered = encoder.decay_pass(stage_enum)
+            console.print(f"Pass {i + 1}: altered {altered}")
+    finally:
+        client.close()
+    console.print(
+        "[yellow]Memories are now permanently degraded; run `reset-memory` to restore.[/yellow]"
+    )
+
+
+@app.command("memory-stats")
+def memory_stats(
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+) -> None:
+    """Show row, conversation-sourced and corrupted counts per collection."""
+    client = PatientMemoryClient(db_path=db_path, dim=get_embedder(embedding_backend).dim)
+    try:
+        stats = client.stats()
+    finally:
+        client.close()
+    table = Table(title="Memory stats")
+    for col in ("Collection", "Rows", "From conversation", "Corrupted"):
+        table.add_column(col)
+    for name, row in stats.items():
+        table.add_row(name, str(row["rows"]), str(row["from_conversation"]), str(row["corrupted"]))
+    console.print(table)
+
+
+@app.command("reset-memory")
+def reset_memory(
+    profile: Path = typer.Option(_DEFAULT_PROFILE, "--profile", "-p"),
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt."),
+) -> None:
+    """Wipe all memories (including conversation memories) and re-seed from the profile."""
+    if not yes and not typer.confirm(f"Delete all memories in {db_path} and re-seed?"):
+        raise typer.Exit()
+    profile_obj = load_patient_profile(profile)
+    embedder = get_embedder(embedding_backend)
+    client = PatientMemoryClient(db_path=db_path, dim=embedder.dim)
+    try:
+        client.reset()
+        counts = client.seed_from_profile(profile_obj, embedder)
+    finally:
+        client.close()
+    console.print(f"[green]Memory reset and re-seeded: {counts}[/green]")
 
 
 @app.command("list-profiles")
