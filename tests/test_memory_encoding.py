@@ -145,3 +145,18 @@ def test_memory_benchmark_degrades_with_stage(tmp_path: Path) -> None:
     )
     assert res["stage_5"]["top1_faithful"] > res["stage_7"]["top1_faithful"]
     assert res["stage_7"]["noise_rate"] > res["stage_5"]["noise_rate"]
+
+
+def test_prefix_is_never_corrupted(client: PatientMemoryClient, profile: PatientProfile) -> None:
+    enc = _encoder(
+        client,
+        profile,
+        encoding_failure={s: 0.0 for s in Stage},
+        encoding_severity={s: 1.0 for s in Stage},
+    )
+    result = enc.encode_episode(
+        "Susan brought lilies.", Stage.SEVEN, prefix="A visitor said to you: "
+    )
+    assert result is not None
+    assert result.stored_text.startswith("A visitor said to you: ")
+    assert result.original_text == "A visitor said to you: Susan brought lilies."

@@ -324,7 +324,10 @@ class PatientEngine:
             valence = "neutral"
         snippet = user_input.strip()[:_MAX_ENCODED_CHARS]
         result = self.encoder.encode_episode(
-            f"A visitor said to you: {snippet}", self.profile.stage, emotional_valence=valence
+            snippet,
+            self.profile.stage,
+            emotional_valence=valence,
+            prefix="A visitor said to you: ",
         )
         return result is not None
 
