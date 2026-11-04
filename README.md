@@ -27,12 +27,15 @@ from academic literature.
   benchmark dialogues, checks factual consistency, and generates
   publication-ready charts.
 
-**Most numeric priors are still assumptions or placeholders.** Each prior's
-`source` field in `config/statistical_priors.yaml` is labelled `CITED`,
-`ASSUMPTION` or `PLACEHOLDER`; only one value (stage 5 `anomia_rate`) is
-currently `CITED`. See `research/README.md` for the extraction workflow and
-`research/extracted/CHANGELOG.md` for what has been done and what is still
-missing, before any research claim is made from this framework's output.
+**Most numeric priors are still assumptions or placeholders.** Current counts
+from `python -m cli.app priors-status` (15 stage priors): **1 cited**
+(stage 5 `anomia_rate`), **8 assumptions**, **6 placeholders**. The command
+exits 1 until every prior is cited, and `pytest -m research_gate` fails for the
+same reason. Each prior's `source` field in `config/statistical_priors.yaml` is
+labelled `CITED`, `ASSUMPTION` or `PLACEHOLDER`. See `research/README.md` for the
+extraction workflow, `research/extraction_log.csv` for the extracted values, and
+`research/extracted/CHANGELOG.md` for what is still missing, before any research
+claim is made from this framework's output.
 
 ## Quickstart
 

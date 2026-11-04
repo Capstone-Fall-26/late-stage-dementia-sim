@@ -16,7 +16,7 @@
 # Assessment Staging (FAST), stages 5-7 corresponding to moderately severe
 # through very severe cognitive decline.
 
-version: 1
+version: 2
 
 citation_note: >
   Mixed provenance: one CITED value, several ASSUMPTIONs anchored in the

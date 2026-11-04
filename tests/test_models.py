@@ -7,7 +7,7 @@ from core.models import DistressState, Stage, StatisticalPriors
 
 
 def test_priors_load(priors: StatisticalPriors) -> None:
-    assert priors.version == 1
+    assert priors.version == 2
     for stage in (Stage.FIVE, Stage.SIX, Stage.SEVEN):
         stage_profile = priors.get_stage_profile(stage)
         assert 0.0 <= stage_profile.non_verbal_cue_probability.value <= 1.0

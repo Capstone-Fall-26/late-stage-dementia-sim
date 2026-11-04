@@ -37,9 +37,9 @@ def _all_sources(priors: StatisticalPriors) -> list[tuple[str, str, str]]:
 
 def test_every_source_has_a_provenance_label(priors: StatisticalPriors) -> None:
     for stage, field, source in _all_sources(priors):
-        assert source.startswith(tuple(f"{label}:" for label in _LABELS)), (
-            f"{stage}.{field} source must start with one of {_LABELS}, got: {source!r}"
-        )
+        assert source.startswith(
+            tuple(f"{label}:" for label in _LABELS)
+        ), f"{stage}.{field} source must start with one of {_LABELS}, got: {source!r}"
 
 
 def test_cited_sources_have_extraction_notes(priors: StatisticalPriors) -> None:

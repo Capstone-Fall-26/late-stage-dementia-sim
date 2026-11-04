@@ -16,6 +16,8 @@ Every `source` now starts with `CITED:`, `ASSUMPTION:` or `PLACEHOLDER:`. Only v
 | `non_verbal_cue_probability` (stages 5-7) | unchanged | unchanged | PLACEHOLDER: no source found |
 | `distress_transition_matrix` | unchanged | unchanged | ASSUMPTION; stationary agitated share 19.5% is inside Steinberg_2008's 13-24% |
 
+Also in this change: YAML `version` bumped to 2; `research/extraction_log.csv` records every extracted number with a DOI link; `python -m cli.app priors-status` reports provenance and exits 1 while any prior is not `CITED`; `pytest -m research_gate` fails for the same reason and is deselected from the default run. `ASSUMPTION` counts as not sourced by the guard.
+
 ### Why most values did not change
 
 The sources found cover mild to moderate AD, are staged by MMSE or CDR rather than GDS/FAST, and report prevalence or test scores rather than per-turn probabilities. Replacing stage 6-7 numbers from them would swap an honest placeholder for a falsely cited value. Gaps still open: late-stage speech output, stage-specific confabulation or misidentification rates, and non-verbal cue frequency.
