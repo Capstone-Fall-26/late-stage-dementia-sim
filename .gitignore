@@ -44,3 +44,6 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Copyrighted source PDFs for literature extraction (keep notes in research/extracted/, not the papers)
+research/*.pdf

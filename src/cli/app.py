@@ -31,6 +31,15 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from behavior.priors_check import (
+    ASSUMPTION,
+    CITED,
+    PLACEHOLDER,
+    UNLABELED,
+    assert_no_placeholders,
+    prior_sources,
+    provenance_label,
+)
 from core.llm_config import resolve_llm_config
 from core.llm_providers import get_llm_provider
 from core.models import (
@@ -245,6 +254,41 @@ def seed_memory(
     counts = client.seed_from_profile(profile_obj, embedder)
     client.close()
     console.print(f"[green]Seeded memory for {profile_obj.name}: {counts}[/green]")
+
+
+@app.command("priors-status")
+def priors_status(
+    priors: Path = typer.Option(_DEFAULT_PRIORS, "--priors", help="Statistical priors YAML."),
+) -> None:
+    """Show which behavior priors are literature-cited and which are not.
+
+    Exits 1 while any prior is still an ASSUMPTION or PLACEHOLDER, so it can gate
+    runs that are meant to produce research output.
+    """
+    priors_obj = load_statistical_priors(priors)
+    sources = prior_sources(priors_obj)
+    unsourced = set(assert_no_placeholders(priors_obj))
+
+    table = Table(title="Statistical prior provenance")
+    table.add_column("Key")
+    table.add_column("Status")
+    table.add_column("Source", overflow="fold")
+    colors = {CITED: "green", ASSUMPTION: "yellow", PLACEHOLDER: "red", UNLABELED: "red"}
+    counts = {CITED: 0, ASSUMPTION: 0, PLACEHOLDER: 0, UNLABELED: 0}
+    for key, source in sources.items():
+        label = provenance_label(source)
+        counts[label] += 1
+        table.add_row(key, f"[{colors[label]}]{label}[/{colors[label]}]", source)
+    console.print(table)
+    console.print(
+        f"{len(sources)} priors: {counts[CITED]} cited, {counts[ASSUMPTION]} assumption, "
+        f"{counts[PLACEHOLDER] + counts[UNLABELED]} placeholder."
+    )
+    console.print("[dim]distress_transition_matrix has no source field and is an assumption.[/dim]")
+    if unsourced:
+        console.print(f"[red]{len(unsourced)} prior(s) are not literature-cited.[/red]")
+        raise typer.Exit(code=1)
+    console.print("[green]All priors are literature-cited.[/green]")
 
 
 def _parse_stage(stage: int) -> Stage:
