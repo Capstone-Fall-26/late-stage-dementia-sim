@@ -1,12 +1,16 @@
 # Statistical priors governing symptom sampling and behavioral transitions.
 #
-# STATUS: The numeric values below are illustrative placeholders that define the
-# correct *shape* and *plausible range* for each distribution. They are NOT yet
-# backed by extracted literature values. Before using this framework for any
-# research claim, replace each `source` field with a real citation using the
-# extraction template in research/README.md, and update `value`/`mean`/`std`
-# accordingly. Every field is deliberately kept explicit (rather than hard-coded
-# in Python) so that updating a citation never requires a code change.
+# STATUS: Provenance of every prior is stated in its `source` field, which starts
+# with one of three labels:
+#   CITED:       the value comes from a published study (notes in
+#                research/extracted/<author>_<year>.md).
+#   ASSUMPTION:  the value is a modeling choice; the cited work supports only its
+#                direction or rough scale, not the number.
+#   PLACEHOLDER: no literature source found yet; the number is illustrative.
+# Only one value is currently CITED (stage 5 anomia_rate). Do not make a research
+# claim from an ASSUMPTION or PLACEHOLDER value. Every field is kept explicit
+# (rather than hard-coded in Python) so updating a citation never needs a code
+# change. See research/extracted/CHANGELOG.md for the history.
 #
 # Stages follow the Reisberg Global Deterioration Scale (GDS) / Functional
 # Assessment Staging (FAST), stages 5-7 corresponding to moderately severe
@@ -15,8 +19,9 @@
 version: 1
 
 citation_note: >
-  Placeholder priors pending literature extraction. See research/README.md for
-  the PubMed/ACM indexing template used to replace these with sourced values.
+  Mixed provenance: one CITED value, several ASSUMPTIONs anchored in the
+  literature, and remaining PLACEHOLDERs. See each `source` field and
+  research/README.md for the extraction workflow.
 
 stages:
   stage_5:
@@ -28,23 +33,23 @@ stages:
       min: 15.0
       max: 90.0
       unit: words_per_turn
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: absolute scale is a modeling choice. Hoffmann_2010 reports phonemes/s, not words per turn, so only the direction (slower, more hesitation with severity) is supported; see research/extracted/hoffmann_2010.md"
     non_verbal_cue_probability:
       distribution: bernoulli
       value: 0.15
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no literature source found yet"
     factual_inversion_rate:
       distribution: bernoulli
       value: 0.18
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no direct source found. Steinberg_2008 NPI delusion prevalence (18% baseline rising to 34-38%) is a loose proxy only; see research/extracted/steinberg_2008.md"
     anomia_rate:
       distribution: bernoulli
-      value: 0.30
-      source: "PLACEHOLDER - pending literature extraction"
+      value: 0.305
+      source: "CITED: Silagi_2015 - any naming error on a 20-item Boston Naming Test, moderate AD (CDR 2, MMSE ~20) = 6.1/20 = 30.5%. Mapping moderate AD to stage 5 is a judgment; see research/extracted/silagi_2015.md"
     distress_escalation_prob:
       distribution: bernoulli
       value: 0.10
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: magnitude is a modeling choice. Direction anchored to Steinberg_2006 (agitation OR 2.42 per CDR point) and Steinberg_2008 (monthly prevalence 13-24%); see research/extracted/"
 
   stage_6:
     label: "Severe Decline (GDS 6 / FAST 6)"
@@ -55,23 +60,23 @@ stages:
       min: 5.0
       max: 55.0
       unit: words_per_turn
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: absolute scale is a modeling choice. Hoffmann_2010 reports phonemes/s, not words per turn, so only the direction (slower, more hesitation with severity) is supported; see research/extracted/hoffmann_2010.md. Its 'severe' group (MMSE 9.4) is not GDS/FAST 7 and did not differ significantly from moderate"
     non_verbal_cue_probability:
       distribution: bernoulli
       value: 0.35
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no literature source found yet"
     factual_inversion_rate:
       distribution: bernoulli
       value: 0.35
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no direct source found; see stage_5 note"
     anomia_rate:
       distribution: bernoulli
       value: 0.50
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: extrapolated upward from the Silagi_2015 trend (mild 18%, moderate 30.5%). That study excluded MMSE <= 12, so it has no data at this stage"
     distress_escalation_prob:
       distribution: bernoulli
       value: 0.22
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: see stage_5 note. The stage 5->6 odds step (about 2.5x) is consistent with Steinberg_2006 OR 2.42 per CDR point if one stage is about one CDR point"
 
   stage_7:
     label: "Very Severe Decline (GDS 7 / FAST 7)"
@@ -82,27 +87,31 @@ stages:
       min: 0.0
       max: 20.0
       unit: words_per_turn
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: absolute scale is a modeling choice. Hoffmann_2010 reports phonemes/s, not words per turn, so only the direction (slower, more hesitation with severity) is supported; see research/extracted/hoffmann_2010.md. Its 'severe' group (MMSE 9.4) is not GDS/FAST 7 and did not differ significantly from moderate"
     non_verbal_cue_probability:
       distribution: bernoulli
       value: 0.65
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no literature source found yet"
     factual_inversion_rate:
       distribution: bernoulli
       value: 0.55
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "PLACEHOLDER: no direct source found; see stage_5 note"
     anomia_rate:
       distribution: bernoulli
       value: 0.75
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: extrapolated upward from the Silagi_2015 trend; no data at this stage (see stage_6 note)"
     distress_escalation_prob:
       distribution: bernoulli
       value: 0.30
-      source: "PLACEHOLDER - pending literature extraction"
+      source: "ASSUMPTION: see stage_5 note. The stage 6->7 odds step (about 1.5x) is smaller than the 2.42 per CDR point seen in Steinberg_2006"
 
 # Row-stochastic transition matrix for the coarse emotional/distress state
 # machine. Rows and columns are ordered [calm, confused, agitated, withdrawn].
 # Each row MUST sum to 1.0 (validated at load time).
+# PROVENANCE: ASSUMPTION. The matrix is a modeling choice, not a cited estimate.
+# Consistency check only: its stationary distribution is calm 36.8%, confused
+# 25.4%, agitated 19.5%, withdrawn 18.3%, and the agitated share falls inside the
+# 13-24% point prevalence of NPI agitation/aggression in Steinberg_2008.
 distress_transition_matrix:
   calm:
     calm: 0.70

@@ -27,10 +27,12 @@ from academic literature.
   benchmark dialogues, checks factual consistency, and generates
   publication-ready charts.
 
-**Every numeric prior is currently a placeholder.** See
-`research/README.md` for the literature-extraction workflow used to
-replace placeholders with real, cited values before any research claim is
-made from this framework's output.
+**Most numeric priors are still assumptions or placeholders.** Each prior's
+`source` field in `config/statistical_priors.yaml` is labelled `CITED`,
+`ASSUMPTION` or `PLACEHOLDER`; only one value (stage 5 `anomia_rate`) is
+currently `CITED`. See `research/README.md` for the extraction workflow and
+`research/extracted/CHANGELOG.md` for what has been done and what is still
+missing, before any research claim is made from this framework's output.
 
 ## Quickstart
 
@@ -301,6 +303,8 @@ logs/                         Rotating loguru logs + prompt traces (gitignored)
 
 ## Contributing literature-grounded priors
 
-All numeric priors in `config/statistical_priors.yaml` are placeholders.
-See `research/README.md` for the extraction template and workflow to
-replace them with values sourced from real published studies.
+Each numeric prior in `config/statistical_priors.yaml` carries a
+`CITED`, `ASSUMPTION` or `PLACEHOLDER` label in its `source` field. See
+`research/README.md` for the extraction template and workflow to promote
+assumptions and placeholders to cited values; `tests/test_priors_provenance.py`
+enforces that a `CITED` value has extraction notes in `research/extracted/`.

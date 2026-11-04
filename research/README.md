@@ -14,8 +14,14 @@ should be traceable back to an entry here.
    directly, note how you derived or approximated it (e.g., "estimated from
    Figure 2 boxplot median").
 4. Update the corresponding field in `config/statistical_priors.yaml`,
-   replacing the `source` placeholder with `"<first-author>_<year>"` and the
-   `value`/`mean`/`std` with the extracted numbers.
+   setting `source` to `"CITED: <Author>_<year> - <what was measured>"` and the
+   `value`/`mean`/`std` to the extracted numbers. Use `ASSUMPTION:` when the
+   study supports only a direction or rough scale, and `PLACEHOLDER:` when
+   there is no source. A `CITED` value needs a matching
+   `research/extracted/<author>_<year>.md`; `tests/test_priors_provenance.py`
+   checks this.
+   Keep source PDFs out of git: `research/*.pdf` is ignored. Paraphrase; do not
+   paste long verbatim passages into the notes.
 5. Record the change in `research/extracted/CHANGELOG.md` (create it if it
    does not exist) with the date, field changed, old value, and new value.
 
@@ -57,6 +63,7 @@ numeric prior. It always reads from `statistical_priors.yaml`. This means:
 
 ## Current Status
 
-All entries in `config/statistical_priors.yaml` are placeholders pending
-extraction. See the `source` field of each prior. Contributions adding real
-extracted values (with citations) are highly welcome.
+See `research/extracted/CHANGELOG.md` for what has been extracted and the
+gaps that remain (late-stage speech output, stage-specific confabulation, and
+non-verbal cue frequency). Contributions adding real extracted values (with
+citations) are highly welcome.
