@@ -54,33 +54,39 @@ class MemoryEncoder:
         emotional_valence: str = "neutral",
         era: str = "recent",
         source: str = "conversation",
+        prefix: str = "",
     ) -> EncodeResult | None:
-        """Try to store a new episodic memory; None if encoding failed."""
+        """Try to store a new episodic memory; None if encoding failed.
+
+        `prefix` is framing text stored verbatim (never corrupted); only
+        `text` is subject to noise.
+        """
         text = text.strip()
         if not text or self.noise.encoding_fails(stage):
             return None
 
         severity = self.noise.encoding_severity(stage)
         result = self.noise.corrupt_text(text, severity)
+        stored_text = prefix + result.text
         vector = self.noise.perturb_vector(
-            self.embedder.embed(result.text), self.noise.vector_sigma(stage)
+            self.embedder.embed(stored_text), self.noise.vector_sigma(stage)
         )
         extra: dict[str, object] = {"source": source}
         if result.changed:
             extra.update(
                 corrupted=True,
                 corruption_level=severity,
-                original_text=text,
+                original_text=prefix + text,
                 corruption_ops=",".join(result.ops),
             )
         record_id = self.client.insert_episodic_memory(
-            text=result.text,
+            text=stored_text,
             embedding=vector,
             emotional_valence=emotional_valence,
             era=era,
             extra=extra,
         )
-        return EncodeResult(record_id, result.text, text, result.changed)
+        return EncodeResult(record_id, stored_text, prefix + text, result.changed)
 
     def decay_pass(self, stage: Stage) -> dict[str, int]:
         """Corrupt a stage-scaled random fraction of every stored record.
