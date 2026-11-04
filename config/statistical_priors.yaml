@@ -82,12 +82,12 @@ stages:
     label: "Very Severe Decline (GDS 7 / FAST 7)"
     verbal_fluency_mean_wpm:
       distribution: normal
-      mean: 6.0
-      std: 4.0
+      mean: 1.0
+      std: 1.0
       min: 0.0
-      max: 20.0
+      max: 5.0
       unit: words_per_turn
-      source: "ASSUMPTION: absolute scale is a modeling choice. Hoffmann_2010 reports phonemes/s, not words per turn, so only the direction (slower, more hesitation with severity) is supported; see research/extracted/hoffmann_2010.md. Its 'severe' group (MMSE 9.4) is not GDS/FAST 7 and did not differ significantly from moderate"
+      source: "ASSUMPTION: max 5 is the FAST stage 7a bound (speech limited to fewer than six intelligible words during an average day; 7b is one word), Mitchell_2015 Table 1 citing the National Hospice Organization. Any single turn therefore cannot exceed 5 words. Mean and std are modeling choices. Hoffmann_2010 does not cover this stage"
     non_verbal_cue_probability:
       distribution: bernoulli
       value: 0.65

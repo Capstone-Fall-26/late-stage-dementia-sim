@@ -57,3 +57,10 @@ def test_no_stale_pending_extraction_marker(priors: StatisticalPriors, stage: St
     profile = priors.get_stage_profile(stage)
     for field in _FIELDS:
         assert "pending literature extraction" not in getattr(profile, field).source
+
+
+def test_stage7_fluency_respects_fast_7a_bound(priors: StatisticalPriors) -> None:
+    """FAST 7a: fewer than six intelligible words in an average day (Mitchell_2015)."""
+    fluency = priors.get_stage_profile(Stage.SEVEN).verbal_fluency_mean_wpm
+    assert fluency.max <= 5
+    assert fluency.mean <= fluency.max
