@@ -87,3 +87,15 @@ aside.seq{position:sticky;top:1rem;max-height:calc(100vh - 2rem);overflow:auto;p
 details{border-radius:12px;} [data-tooltip]{border-bottom:0!important;}
 footer.foot{margin-top:2rem;font-size:.8rem;color:var(--muted);line-height:1.6;}
 footer.foot code{font-size:.75rem;}
+
+/* Replay transport + progress */
+.seq .tool{width:2.6rem;height:2.6rem;}
+.seq .tool.play{width:3rem;background:linear-gradient(135deg,var(--accent2),var(--accent));color:#071018;border-radius:50%;}
+.seq .tool.play:hover{filter:brightness(1.12);}
+.seq .tool.play .i-pause{display:none;}
+.seq .tool.play[aria-pressed=true] .i-play{display:none;}
+.seq .tool.play[aria-pressed=true] .i-pause{display:block;}
+.seq .tool svg.fill{fill:currentColor;stroke:none;}
+.progress{height:.55rem;margin:0 0 .45rem;border-radius:999px;background:rgba(255,255,255,.09);overflow:hidden;cursor:pointer;}
+.progress .fill{height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .35s ease;}
+.plabel{font-family:var(--mono);font-size:.74rem;color:var(--muted);margin-bottom:1rem;}

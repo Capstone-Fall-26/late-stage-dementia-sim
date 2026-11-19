@@ -47,6 +47,9 @@ function draw(){
  setTrace('Sequence recall',{x:[lx],y:[ly]});
  setTrace('Sequence hits',{x:[hx],y:[hy],'marker.color':[hc]});
  setTrace('Sequence cue',{x:[[T.q[0]]],y:[[T.q[1]]],text:[['Turn '+T.n]]});
+ var total=turns.length*STEPS.length,pos=turn*STEPS.length+step+1,pct=100*pos/total;
+ var pb=document.getElementById('seq-progress');pb.setAttribute('aria-valuenow',Math.round(pct));pb.firstElementChild.style.width=pct+'%';
+ document.getElementById('seq-plabel').textContent='Turn '+T.n+' of '+turns.length+' \u00b7 Step '+(step+1)+' of '+STEPS.length+' \u00b7 '+Math.round(pct)+'%';
  document.querySelectorAll('.step').forEach(function(b,i){b.classList.toggle('active',i===step);b.classList.toggle('done',i<step);});
  document.querySelectorAll('.pill').forEach(function(b,i){b.setAttribute('aria-pressed',i===turn);});
  var S=STEPS[step];
@@ -54,13 +57,14 @@ function draw(){
 }
 function next(){if(step<STEPS.length-1){step++;}else if(turn<turns.length-1){turn++;step=0;}else{stop();return;}draw();}
 function prev(){if(step>0){step--;}else if(turn>0){turn--;step=STEPS.length-1;}draw();}
-function stop(){if(timer){clearInterval(timer);timer=null;}var b=document.getElementById('seq-play');if(b)b.textContent='Play';}
-function play(){if(timer){stop();return;}document.getElementById('seq-play').textContent='Pause';timer=setInterval(next,2600);}
+function stop(){if(timer){clearInterval(timer);timer=null;}var b=document.getElementById('seq-play');if(b)b.setAttribute('aria-pressed','false');}
+function play(){if(timer){stop();return;}if(turn===turns.length-1&&step===STEPS.length-1){turn=0;step=0;draw();}document.getElementById('seq-play').setAttribute('aria-pressed','true');timer=setInterval(next,2600);}
 document.querySelectorAll('.step').forEach(function(b,i){b.addEventListener('click',function(){stop();step=i;draw();});});
 document.querySelectorAll('.pill').forEach(function(b,i){b.addEventListener('click',function(){stop();turn=i;step=0;draw();});});
 document.getElementById('seq-next').addEventListener('click',function(){stop();next();});
 document.getElementById('seq-prev').addEventListener('click',function(){stop();prev();});
 document.getElementById('seq-play').addEventListener('click',play);
+document.getElementById('seq-progress').addEventListener('click',function(e){var r=this.getBoundingClientRect(),f=(e.clientX-r.left)/r.width,p=Math.min(turns.length*STEPS.length-1,Math.floor(f*turns.length*STEPS.length));stop();turn=Math.floor(p/STEPS.length);step=p%STEPS.length;draw();});
 document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'){stop();next();}else if(e.key==='ArrowLeft'){stop();prev();}});
 draw();
 })();

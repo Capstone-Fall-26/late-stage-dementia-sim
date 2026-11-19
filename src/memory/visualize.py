@@ -948,10 +948,12 @@ def write_memory_map(
 <h2>Communication sequence</h2>
 <p class="sub">Step through one trainee turn. The recall step lights up the memories it pulled on the map. Arrow keys work too.</p>
 <div class="row"><div class="chips">{pills}</div>
-<div class="tools" style="padding:.3rem .5rem;gap:.4rem">
-<button type="button" class="chip" id="seq-prev">Back</button>
-<button type="button" class="chip" id="seq-play">Play</button>
-<button type="button" class="chip" id="seq-next">Next</button></div></div>
+<div class="tools">
+<button type="button" class="tool" id="seq-prev" aria-label="Previous step" data-tooltip="Previous step" data-placement="bottom"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8z"/><path d="M5 4v16"/></svg></button>
+<button type="button" class="tool play" id="seq-play" aria-label="Play or pause" aria-pressed="false" data-tooltip="Play / pause" data-placement="bottom"><svg class="i-play fill" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg><svg class="i-pause fill" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+<button type="button" class="tool" id="seq-next" aria-label="Next step" data-tooltip="Next step" data-placement="bottom"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><path d="M19 4v16"/></svg></button></div></div>
+<div class="progress" id="seq-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-tooltip="Click to jump" data-placement="bottom"><div class="fill"></div></div>
+<div class="plabel" id="seq-plabel"></div>
 <ol class="pipe">{steps}</ol>
 <div class="detail" id="seq-detail"></div>
 <script id="turns-data" type="application/json">{data}</script>
