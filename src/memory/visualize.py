@@ -10,6 +10,7 @@ Nothing here writes to the store, bumps `access_count`, or calls an LLM.
 from __future__ import annotations
 
 import html
+import json
 import textwrap
 from pathlib import Path
 from typing import Any
@@ -21,11 +22,13 @@ import plotly.graph_objects as go
 from memory.client import EPISODIC_COLLECTION, FACTS_COLLECTION, PatientMemoryClient
 from memory.embeddings import Embedder
 
-_PICO_CSS_PATH = Path(__file__).parent / "assets" / "pico.min.css"
+_ASSETS = Path(__file__).parent / "assets"
+_PICO_CSS_PATH = _ASSETS / "pico.min.css"
 
-BG_COLOR = "#0f0d10"
+BG_COLOR = "#0b0d14"
 CLEAN_COLOR = "#e8e8ea"
 CORRUPT_COLOR = "#ff9f43"
+SEQ_COLOR = "#22d3ee"
 FACT_COLOR = "#4aa3df"
 QUERY_COLOR = "#2ecc71"
 HUB_COLOR = "#e63946"
@@ -278,6 +281,66 @@ def _hover(row: pd.Series, drift: float | None) -> str:
     return "<br>".join(parts)
 
 
+def load_transcript(path: Path) -> list[dict[str, Any]]:
+    """Read the `turns` list from a transcript JSON saved by `chat`."""
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    turns = data.get("turns", []) if isinstance(data, dict) else data
+    return [t for t in turns if isinstance(t, dict) and t.get("trainee")]
+
+
+def _locate_hit(df: pd.DataFrame, hit: dict[str, Any]) -> int | None:
+    """Find the map row for a recalled hit: by collection+id, else by text."""
+    kind = "episodic" if hit.get("collection") == EPISODIC_COLLECTION else "fact"
+    hit_id = (hit.get("metadata") or {}).get("id")
+    rows = df.index[df["key"] == f"{kind}:{hit_id}"]
+    if len(rows):
+        return int(rows[0])
+    texts = {str(hit.get("text", "")), str(hit.get("original_text") or "")} - {""}
+    same_kind = df[df["kind"] == kind]
+    for col in ("text", "original_text"):
+        found = same_kind.index[same_kind[col].isin(texts)]
+        if len(found):
+            return int(found[0])
+    return None
+
+
+def _turn_payload(
+    df: pd.DataFrame, xy: np.ndarray, turns: list[dict[str, Any]], turn_xy: np.ndarray
+) -> list[dict[str, Any]]:
+    """Per-turn data for the in-page communication-sequence replay."""
+    out: list[dict[str, Any]] = []
+    for i, (turn, (qx, qy)) in enumerate(zip(turns, turn_xy, strict=True)):
+        hits = []
+        for hit in turn.get("memory_hits", []) or []:
+            pos = _locate_hit(df, hit)
+            if pos is None:
+                continue
+            hits.append(
+                {
+                    "x": float(xy[pos, 0]),
+                    "y": float(xy[pos, 1]),
+                    "score": float(hit.get("score", 0.0)),
+                    "noise": hit.get("noise_type"),
+                    "coll": hit.get("collection", ""),
+                    "text": str(hit.get("text", "")),
+                }
+            )
+        out.append(
+            {
+                "n": int(turn.get("turn", i + 1)),
+                "trainee": str(turn.get("trainee", "")),
+                "patient": str(turn.get("patient", "")),
+                "distress": str(turn.get("distress_state", "")),
+                "constraints": turn.get("constraints") or {},
+                "latency_ms": float(turn.get("latency_ms", 0.0) or 0.0),
+                "encoded": turn.get("memory_encoded"),
+                "q": [float(qx), float(qy)],
+                "hits": hits,
+            }
+        )
+    return out
+
+
 def _empty_figure() -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
@@ -301,6 +364,7 @@ def build_memory_map(
     query_label: str | None = None,
     stage: int | None = None,
     projection: str = "tsne",
+    turns: list[dict[str, Any]] | None = None,
 ) -> go.Figure:
     """Build the 2D map. Per-record cosine drift is stored in `fig.layout.meta["drift"]`."""
     if df.empty:
@@ -321,7 +385,14 @@ def build_memory_map(
         drifts = _cosine_distance(orig_vecs, stored[corrupted_idx])
         drift_by_pos = {i: float(d) for i, d in zip(corrupted_idx, drifts, strict=True)}
     q = None if query_vector is None else np.asarray(query_vector, dtype=np.float64).reshape(1, -1)
-    extra = np.vstack([orig_vecs, q]) if q is not None else orig_vecs
+    turn_vecs = (
+        np.asarray(
+            embedder.embed_batch([str(t.get("trainee", "")) for t in turns]), dtype=np.float64
+        )
+        if turns
+        else np.zeros((0, stored.shape[1]))
+    )
+    extra = np.vstack([orig_vecs, q, turn_vecs] if q is not None else [orig_vecs, turn_vecs])
     xy, extra_xy, x_title, y_title, used = _layout_2d(stored, extra, projection)
     orig_xy = extra_xy[: len(corrupted_idx)]
 
@@ -383,11 +454,11 @@ def build_memory_map(
             arrowhead=0,
             arrowcolor=HUB_COLOR,
             arrowwidth=1.2,
-            ax=46 if i % 2 == 0 else -46,
-            ay=-34 if i % 3 else 34,
+            ax=52 if i % 2 == 0 else -52,
+            ay=-40 if i % 3 else 40,
             bgcolor=HUB_COLOR,
-            font={"color": "white", "size": 11},
-            borderpad=3,
+            font={"color": "white", "size": 12},
+            borderpad=5,
             hovertext=tip,
             captureevents=True,
         )
@@ -470,7 +541,7 @@ def build_memory_map(
 
     # --- optional query ------------------------------------------------------------
     if q is not None:
-        qxy = extra_xy[-1]
+        qxy = extra_xy[len(corrupted_idx)]
         sims = stored @ q[0] / np.maximum(np.linalg.norm(stored, axis=1) * np.linalg.norm(q), 1e-12)
         nearest = np.argsort(-sims)[:3]
         lx: list[float | None] = []
@@ -509,7 +580,51 @@ def build_memory_map(
             )
         )
 
-    title = "Patient memory map" + (f" (stage {stage})" if stage is not None else "")
+    turn_payload: list[dict[str, Any]] = []
+    if turns:
+        turn_xy = extra_xy[len(extra_xy) - len(turns) :]
+        turn_payload = _turn_payload(df, xy, turns, turn_xy)
+        seq_style = {"legendgroup": "sequence", "hoverinfo": "skip"}
+        fig.add_trace(
+            go.Scatter(
+                x=[],
+                y=[],
+                mode="lines",
+                name="Sequence recall",
+                line={"color": SEQ_COLOR, "width": 2, "dash": "dash"},
+                **seq_style,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[],
+                y=[],
+                mode="markers",
+                name="Sequence hits",
+                marker={"symbol": "circle-open", "size": 24, "line": {"width": 3}},
+                **seq_style,
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[],
+                y=[],
+                mode="markers+text",
+                name="Sequence cue",
+                marker={
+                    "symbol": "star",
+                    "size": 22,
+                    "color": SEQ_COLOR,
+                    "line": {"color": "white", "width": 1},
+                },
+                text=[""],
+                textposition="bottom center",
+                textfont={"color": SEQ_COLOR, "size": 13},
+                **seq_style,
+            )
+        )
+
+    title = ""
     axis = {"showgrid": False, "zeroline": False}
     if used == "tsne":
         axis |= {"showticklabels": False}
@@ -523,12 +638,14 @@ def build_memory_map(
         yaxis={"title": y_title, **axis},
         height=700,
         legend={"orientation": "h", "y": -0.1},
-        margin={"l": 40, "r": 20, "t": 50, "b": 60},
-        hoverlabel={"align": "left", "bgcolor": "#1c1a1f", "font": {"size": 12}},
+        margin={"l": 70, "r": 40, "t": 30, "b": 80},
+        font={"size": 13},
+        hoverlabel={"align": "left", "bgcolor": "#161a28", "font": {"size": 12}},
     )
     fig.layout.meta = {
         "drift": {str(df.at[i, "key"]): d for i, d in drift_by_pos.items()},
         "projection": used,
+        "turns": turn_payload,
     }
     return fig
 
@@ -536,49 +653,6 @@ def build_memory_map(
 # --------------------------------------------------------------------------- #
 # HTML
 # --------------------------------------------------------------------------- #
-
-_EXTRA_CSS = f"""
-:root{{--pico-background-color:{BG_COLOR};--pico-card-background-color:transparent;
---glass:rgba(28,24,36,.55);--glass-line:rgba(255,255,255,.09);}}
-body{{min-height:100vh;overflow-x:hidden;background:
-radial-gradient(900px 500px at 8% -5%,rgba(124,58,237,.28),transparent 60%),
-radial-gradient(800px 500px at 100% 10%,rgba(14,165,233,.20),transparent 60%),
-radial-gradient(900px 600px at 50% 110%,rgba(230,57,70,.16),transparent 60%),{BG_COLOR};
-background-attachment:fixed;}}
-h1{{background:linear-gradient(90deg,#fff,#b9a6ff 55%,#7dd3fc);-webkit-background-clip:text;
-background-clip:text;color:transparent;letter-spacing:-.02em;}}
-article{{background:var(--glass);border:1px solid var(--glass-line);border-radius:16px;
-backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-box-shadow:0 10px 40px rgba(0,0,0,.35);overflow:hidden;}}
-section.grid article{{padding:1rem 1.25rem;margin-bottom:0;}}
-section.grid h3{{margin:.1rem 0 0;font-size:1.9rem;font-variant-numeric:tabular-nums;}}
-section.grid small{{text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;opacity:.7;}}
-.stage{{position:relative;padding:0;
-background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px;}}
-.stage:fullscreen{{background-color:{BG_COLOR};}}
-.bar{{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;
-padding:.7rem .9rem;border-bottom:1px solid var(--glass-line);}}
-.chips,.tools{{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;}}
-.chip{{display:inline-flex;align-items:center;gap:.45rem;margin:0;width:auto;padding:.28rem .75rem;
-font-size:.78rem;font-weight:500;line-height:1.2;color:#e8e8ea;cursor:pointer;
-background:rgba(255,255,255,.05);border:1px solid var(--glass-line);border-radius:999px;
-transition:background .15s,opacity .15s,border-color .15s;}}
-.chip:hover{{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);}}
-.chip[aria-pressed=false]{{opacity:.38;}}
-.chip i{{width:.65rem;height:.65rem;display:inline-block;}}
-.tools{{padding:.2rem;background:rgba(0,0,0,.35);border:1px solid var(--glass-line);border-radius:12px;}}
-.tool{{display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;margin:0;padding:0;
-color:#e8e8ea;background:transparent;border:0;border-radius:9px;cursor:pointer;
-transition:background .15s,color .15s;}}
-.tool:hover{{background:rgba(255,255,255,.14);}}
-.tool[aria-pressed=true]{{background:linear-gradient(135deg,#7c3aed,#0ea5e9);color:#fff;}}
-.tool svg{{width:1.1rem;height:1.1rem;stroke:currentColor;fill:none;stroke-width:2;
-stroke-linecap:round;stroke-linejoin:round;}}
-.sep{{width:1px;height:1.3rem;background:var(--glass-line);margin:0 .15rem;}}
-#memory-map{{width:100%;}}
-details{{border-radius:12px;}}
-[data-tooltip]{{border-bottom:0!important;}}
-"""
 
 _ICONS = {
     "zoom-in": '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/>',
@@ -638,44 +712,14 @@ _TOOLS = [
     ("png", "Download as PNG"),
 ]
 
-_JS = """
-(function(){
-var gd=document.getElementById('memory-map'),stage=document.getElementById('stage');
-function lay(t,id){var n=t.name||'',g=t.legendgroup||'';
- if(id==='episodic')return n.indexOf('episodic memory')>=0;
- if(id==='facts')return n.indexOf('biographical fact')>=0;
- if(id==='clusters')return n==='Cluster spokes'||n==='Cluster hub';
- if(id==='drift')return g==='drift';
- if(id==='query')return g==='query';return false;}
-document.querySelectorAll('.chip').forEach(function(c){c.addEventListener('click',function(){
- var on=c.getAttribute('aria-pressed')!=='true',id=c.dataset.layer;c.setAttribute('aria-pressed',on);
- var idx=[];gd.data.forEach(function(t,i){if(lay(t,id))idx.push(i);});
- if(idx.length)Plotly.restyle(gd,{visible:on},idx);
- if(id==='clusters'){var u={};(gd.layout.annotations||[]).forEach(function(a,i){u['annotations['+i+'].visible']=on;});Plotly.relayout(gd,u);}
-});});
-function zoom(f){var x=gd._fullLayout.xaxis.range,y=gd._fullLayout.yaxis.range,
- cx=(x[0]+x[1])/2,cy=(y[0]+y[1])/2,hx=(x[1]-x[0])/2*f,hy=(y[1]-y[0])/2*f;
- Plotly.relayout(gd,{'xaxis.range':[cx-hx,cx+hx],'yaxis.range':[cy-hy,cy+hy]});}
-var act={'zoom-in':function(){zoom(.7);},'zoom-out':function(){zoom(1.4);},
- 'reset':function(){Plotly.relayout(gd,{'xaxis.autorange':true,'yaxis.autorange':true});},
- 'png':function(){Plotly.downloadImage(gd,{format:'png',filename:'memory_map',width:1600,height:900,scale:2});},
- 'full':function(){if(document.fullscreenElement)document.exitFullscreen();else stage.requestFullscreen();},
- 'pan':function(b){var on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);
-  Plotly.relayout(gd,{dragmode:on?'pan':'zoom'});}};
-document.querySelectorAll('.tool').forEach(function(b){b.addEventListener('click',function(){act[b.dataset.act](b);});});
-document.addEventListener('fullscreenchange',function(){
- Plotly.relayout(gd,{height:document.fullscreenElement?window.innerHeight-70:700});});
-})();
-"""
 
-
-def _controls_html(has_query: bool) -> str:
+def _controls_html(has_query: bool, has_seq: bool) -> str:
     chips = "".join(
         f'<button type="button" class="chip" data-layer="{i}" aria-pressed="true" '
         f'data-tooltip="{html.escape(tip)}"><i style="background:{c};border-radius:{r}"></i>'
         f"{html.escape(label)}</button>"
         for i, c, r, label, tip in _LAYERS
-        if i != "query" or has_query
+        if (i != "query" or has_query) and (i != "sequence" or has_seq)
     )
     pressed = ' aria-pressed="false"'
     tools = "".join(
@@ -723,6 +767,117 @@ def _table(df: pd.DataFrame, drift: dict[str, float]) -> str:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Report page
+# --------------------------------------------------------------------------- #
+
+_STAGE_LABELS = {
+    5: "GDS 5 / FAST 5 · Moderately severe decline",
+    6: "GDS 6 / FAST 6 · Severe decline",
+    7: "GDS 7 / FAST 7 · Very severe decline (speech limited to <6 words/day at 7a)",
+}
+
+_PIPELINE = [
+    "Trainee utterance",
+    "Trigger assessment",
+    "Symptom sampling",
+    "Memory recall",
+    "Prompt assembly",
+    "LLM generation",
+    "Post-processing",
+    "Memory encoding",
+]
+
+
+def _svg(inner: str) -> str:
+    return f'<svg viewBox="0 0 32 32" aria-hidden="true">{inner}</svg>'
+
+
+def _legend_html(has_query: bool, has_seq: bool) -> str:
+    sq = lambda c, extra="": f'<rect x="7" y="7" width="18" height="18" rx="2" fill="{c}" {extra}/>'  # noqa: E731
+    dia = lambda c, st="": f'<path d="M16 4L28 16L16 28L4 16Z" fill="{c}" {st}/>'  # noqa: E731
+    items = [
+        (
+            _svg(sq(CLEAN_COLOR)),
+            "Intact engram",
+            "A stored episode whose text still matches what originally happened. Brighter = recalled more often.",
+        ),
+        (
+            _svg(sq(CORRUPT_COLOR)),
+            "Degraded engram",
+            "Text altered by encoding noise or a decay pass. Larger = more corrupted.",
+        ),
+        (
+            _svg(dia(FACT_COLOR)),
+            "Biographical fact",
+            "A discrete fact the patient 'knows' (name, job, family).",
+        ),
+        (
+            _svg(dia(FACT_COLOR, f'stroke="{CORRUPT_COLOR}" stroke-width="3"')),
+            "Degraded fact",
+            "A fact whose stored text no longer matches the truth (amber outline).",
+        ),
+        (
+            _svg(
+                f'<circle cx="16" cy="16" r="7" fill="{HUB_COLOR}"/><path d="M16 16L30 6" stroke="{HUB_COLOR}" stroke-width="2"/>'
+            ),
+            "Cluster hub + red label",
+            "The centre of a group of memories that are similar in meaning. Spokes run to each member; the label names the most representative one and the group size.",
+        ),
+        (
+            _svg(
+                f'<path d="M4 24L24 10" stroke="{CORRUPT_COLOR}" stroke-width="2.5"/><path d="M28 8L18 9L25 17Z" fill="{CORRUPT_COLOR}"/><circle cx="4" cy="24" r="3" fill="none" stroke="{CORRUPT_COLOR}" stroke-width="2"/>'
+            ),
+            "Drift arrow",
+            "From where the memory should sit (its original text) to where the degraded vector actually sits. A longer arrow means a worse distortion.",
+        ),
+    ]
+    if has_query:
+        items.append(
+            (
+                _svg(
+                    f'<path d="M16 3l3.9 8.2 9 1.1-6.6 6.2 1.7 8.9L16 23l-8 4.4 1.7-8.9-6.6-6.2 9-1.1z" fill="{QUERY_COLOR}"/>'
+                ),
+                "Query cue",
+                "Your --query text placed in the same space; dotted lines point to the 3 stored memories most similar to it.",
+            )
+        )
+    if has_seq:
+        items.append(
+            (
+                _svg(
+                    f'<path d="M16 3l3.9 8.2 9 1.1-6.6 6.2 1.7 8.9L16 23l-8 4.4 1.7-8.9-6.6-6.2 9-1.1z" fill="{SEQ_COLOR}"/>'
+                ),
+                "Sequence cue & recalled rings",
+                "In the replay, the star is the trainee's turn and rings mark what the patient recalled: teal = faithful, amber = already degraded, red = noise injected at retrieval.",
+            )
+        )
+    body = "".join(
+        f'<div class="item">{icon}<div><b>{html.escape(t)}</b><span>{html.escape(d)}</span></div></div>'
+        for icon, t, d in items
+    )
+    return f'<div class="legend"><h4>Legend</h4><div class="items">{body}</div></div>'
+
+
+def _neurons_svg() -> str:
+    """Deterministic decorative neuron network for the page header."""
+    rng = np.random.default_rng(11)
+    pts = rng.uniform([10, 10], [390, 110], size=(22, 2))
+    lines, dots = [], []
+    for i, (x, y) in enumerate(pts):
+        d = np.linalg.norm(pts - pts[i], axis=1)
+        for j in np.argsort(d)[1:3]:
+            lines.append(
+                f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{pts[j, 0]:.0f}" y2="{pts[j, 1]:.0f}"/>'
+            )
+        dots.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{2 + (i % 3)}"/>')
+    return (
+        '<svg class="neurons" viewBox="0 0 400 120" aria-hidden="true">'
+        f'<g stroke="rgba(94,234,212,.45)" stroke-width="1">{"".join(lines)}</g>'
+        f'<g fill="rgba(196,181,253,.8)">{"".join(dots)}</g></svg>'
+    )
+
+
 def write_memory_map(
     fig: go.Figure,
     path: Path,
@@ -738,6 +893,7 @@ def write_memory_map(
     meta = fig.layout.meta or {}
     drift: dict[str, float] = dict(meta.get("drift", {}))
     used = str(meta.get("projection", "none"))
+    turns: list[dict[str, Any]] = list(meta.get("turns", []))
 
     total = len(frame)
     corrupted = int(frame["corrupted"].sum()) if total else 0
@@ -745,28 +901,70 @@ def write_memory_map(
     mean_drift = f"{np.mean(list(drift.values())):.3f}" if drift else "n/a"
     pct = f" ({100 * corrupted / total:.0f}%)" if total else ""
 
-    badge = f"<mark>Stage {stage}</mark> " if stage is not None else ""
-    banner = (
-        f"<p>Query: <code>{html.escape(query_label)}</code>: green star, dotted lines to the 3 "
-        "nearest stored memories.</p>"
-        if query_label
-        else ""
-    )
+    badges = ""
+    if stage is not None:
+        badges += f'<span class="badge stage">{html.escape(_STAGE_LABELS.get(stage, f"Stage {stage}"))}</span>'
+    badges += f'<span class="badge">layout: {"t-SNE" if used == "tsne" else used.upper()}</span>'
+    if query_label:
+        badges += f'<span class="badge">query: {html.escape(query_label)}</span>'
+    if turns:
+        badges += f'<span class="badge">replay: {len(turns)} turns</span>'
+
     how = {
-        "tsne": "Each dot is one memory, placed by <b>t-SNE</b> so that memories with similar "
-        "meaning sit close together. Distances inside a cluster are meaningful; the axes and "
-        "the gaps between far-apart clusters are not.",
-        "pca": "Each dot is one memory, placed by <b>PCA</b> (the two directions of greatest "
-        "variation). Axis titles show how much variance each captures.",
+        "tsne": "Each point is one memory, embedded as a vector and placed by <b>t-SNE</b> so "
+        "that memories with similar meaning sit close together. Distances inside a cluster "
+        "are meaningful; the axes and the gaps between far-apart clusters are not.",
+        "pca": "Each point is one memory, placed by <b>PCA</b> (the two directions of greatest "
+        "variation). Axis titles show the variance each captures.",
     }.get(used, "")
+    stage_txt = f" at {html.escape(_STAGE_LABELS[stage])}" if stage in _STAGE_LABELS else ""
+    caption = (
+        '<figcaption class="cap"><b>Figure 1.</b> Two-dimensional embedding of the simulated '
+        f"patient's memory store{stage_txt}. {how} "
+        "Amber arrows show degradation drift from each record's ground truth to its stored "
+        "vector (cosine distance, hover for values).</figcaption>"
+    )
+
     plot = fig.to_html(
         include_plotlyjs=True,
         full_html=False,
         div_id="memory-map",
         config={"displayModeBar": False, "scrollZoom": True, "responsive": True},
     )
-    css = _PICO_CSS_PATH.read_text(encoding="utf-8") + _EXTRA_CSS
-    title = "Patient memory map" + (f" - stage {stage}" if stage is not None else "")
+
+    seq_html = ""
+    seq_js = ""
+    if turns:
+        pills = "".join(
+            f'<button type="button" class="pill" aria-pressed="false">Turn {t["n"]}</button>'
+            for t in turns
+        )
+        steps = "".join(
+            f'<li><button type="button" class="step"><span class="n">{i + 1}</span>{html.escape(n)}</button></li>'
+            for i, n in enumerate(_PIPELINE)
+        )
+        data = json.dumps(turns).replace("</", "<\\/")
+        seq_html = f"""<article class="seq" id="seq">
+<h2>Communication sequence</h2>
+<p class="sub">Replay of a recorded conversation. Step through how one trainee utterance flows
+through the simulator; the recall step lights up the memories it pulled on the map above.
+Keys: left/right arrows.</p>
+<div class="row"><div class="chips">{pills}</div>
+<div class="tools" style="padding:.3rem .5rem;gap:.4rem">
+<button type="button" class="chip" id="seq-prev">Back</button>
+<button type="button" class="chip" id="seq-play">Play</button>
+<button type="button" class="chip" id="seq-next">Next</button></div></div>
+<ol class="pipe">{steps}</ol>
+<div class="detail" id="seq-detail"></div>
+<script id="turns-data" type="application/json">{data}</script>
+</article>"""
+        seq_js = f"<script>{(_ASSETS / 'sequence.js').read_text(encoding='utf-8')}</script>"
+
+    css = _PICO_CSS_PATH.read_text(encoding="utf-8") + (_ASSETS / "report.css").read_text(
+        encoding="utf-8"
+    )
+    report_js = (_ASSETS / "report.js").read_text(encoding="utf-8")
+    title = "Memory degradation atlas" + (f" - stage {stage}" if stage is not None else "")
     doc = f"""<!doctype html>
 <html lang="en" data-theme="dark">
 <head>
@@ -777,30 +975,34 @@ def write_memory_map(
 </head>
 <body>
 <main class="container">
-<header>
-<h1>{badge}Patient memory map</h1>
-<p>A researcher's view of what the simulated patient remembers, and how it has degraded.
-Hover anything for an explanation.</p>
-{banner}
+<header class="hero">
+{_neurons_svg()}
+<p class="eyebrow">Late-stage dementia simulation · researcher view</p>
+<h1>Memory degradation atlas</h1>
+<p class="lede">What the simulated patient remembers, how it has degraded, and how a conversation
+reaches into it. Hover anything for an explanation.</p>
+<div class="badges">{badges}</div>
 </header>
 <section class="grid">
-{_kpi("Total memories", str(total), "Every episodic memory and biographical fact stored for this patient.")}
-{_kpi("Corrupted", f"{corrupted}{pct}", "Memories whose stored text was altered by encoding noise or decay passes.")}
+{_kpi("Engrams stored", str(total), "Every episodic memory and biographical fact stored for this patient.")}
+{_kpi("Degraded", f"{corrupted}{pct}", "Memories whose stored text was altered by encoding noise or decay passes.")}
 {_kpi("Biographical facts", str(facts), "Discrete facts about the patient (as opposed to episodes).")}
-{_kpi("Mean cosine drift", mean_drift, "Average of 1 - cosine similarity between each corrupted memory's original and stored vectors. 0 = identical, higher = more degraded.")}
+{_kpi("Mean drift (1 - cos)", mean_drift, "Average of 1 - cosine similarity between each degraded memory's original and stored vectors. 0 = identical, higher = more degraded.")}
 </section>
-<article id="stage" class="stage">{_controls_html(bool(query_label))}{plot}</article>
-<details open><summary>How to read this map</summary>
-<p>{how}</p>
-<p>Groups of dots joined by thin spokes are <b>clusters</b> of related memories; the red label
-names the most representative one and the group size. An <b>orange arrow</b> shows one
-memory's drift from its ground truth (where its original text would sit) to where the
-degraded vector actually sits: a longer arrow means a worse distortion. Brighter dots have
-been recalled more often (rehearsal).</p>
-</details>
+<article id="stage" class="stage">{_controls_html(bool(query_label), bool(turns))}{plot}{_legend_html(bool(query_label), bool(turns))}{caption}</article>
+{seq_html}
 {_table(frame, drift) if total else ""}
+<footer class="foot">
+<b>Methods.</b> Vectors come from the store's own embedder (384-d, L2-normalised). Ground truth
+is re-embedded from <code>original_text</code> / <code>original_fact</code>; drift is
+1 - cosine similarity to the stored vector. Clusters are k-means in the original vector
+space. This view is read-only: it never changes the store. <b>Caveat.</b> Noise magnitudes
+and most behavioural priors are simulation assumptions, not clinical measurements (see the
+README's provenance table).
+</footer>
 </main>
-<script>{_JS}</script>
+<script>{report_js}</script>
+{seq_js}
 </body>
 </html>
 """

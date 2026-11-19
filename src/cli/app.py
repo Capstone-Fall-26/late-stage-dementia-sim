@@ -56,7 +56,12 @@ from memory.embeddings import get_embedder
 from memory.encoding import MemoryEncoder
 from memory.noise import MemoryNoiseModel, build_confusion_map
 from memory.recall import MemoryRecall
-from memory.visualize import build_memory_map, load_memory_records, write_memory_map
+from memory.visualize import (
+    build_memory_map,
+    load_memory_records,
+    load_transcript,
+    write_memory_map,
+)
 
 load_dotenv()
 
@@ -433,6 +438,11 @@ def memory_map(
     query: str | None = typer.Option(None, "--query", help="Cue to place on the map."),
     embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
     projection: str = typer.Option("tsne", "--projection", help="tsne | pca"),
+    transcript: Path | None = typer.Option(
+        None,
+        "--transcript",
+        help="Saved chat transcript JSON to replay as a step-through communication sequence.",
+    ),
     open_browser: bool = typer.Option(False, "--open/--no-open", help="Open the HTML afterwards."),
 ) -> None:
     """Render a read-only interactive 2D map of memory vectors with degradation drift."""
@@ -450,6 +460,10 @@ def memory_map(
     finally:
         client.close()
 
+    if transcript is not None and not transcript.exists():
+        console.print(f"[red]Transcript not found: {transcript}[/red]")
+        raise typer.Exit(code=1)
+    turns = load_transcript(transcript) if transcript else None
     query_vector = embedder.embed(query) if query else None
     fig = build_memory_map(
         df,
@@ -458,6 +472,7 @@ def memory_map(
         query_label=query,
         stage=stage_enum.value,
         projection=projection,
+        turns=turns,
     )
     path = write_memory_map(
         fig,

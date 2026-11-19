@@ -169,3 +169,70 @@ def test_tiny_input_falls_back_to_pca_and_pca_flag() -> None:
     assert tiny.layout.meta["projection"] == "pca"
     pca = build_memory_map(_frame(emb, 8, 2), emb, projection="pca")
     assert pca.layout.xaxis.title.text.startswith("PC1 (")
+
+
+def _turns() -> list[dict]:
+    hit = {
+        "text": "memory about garden 3 <b>x</b>",
+        "score": 0.4,
+        "collection": "episodic_memory",
+        "noise_type": "swap",
+        "metadata": {"id": 3},
+    }
+    return [
+        {
+            "turn": 1,
+            "trainee": "tell me about the garden",
+            "patient": "*smiles*",
+            "distress_state": "calm",
+            "constraints": {"max_words": 3, "memory_fog": False},
+            "memory_hits": [hit],
+            "latency_ms": 12.0,
+            "memory_encoded": True,
+        },
+        {
+            "turn": 2,
+            "trainee": "how are you",
+            "patient": "*silence*",
+            "distress_state": "confused",
+            "constraints": {"max_words": 0, "memory_fog": True},
+            "memory_hits": [],
+        },
+    ]
+
+
+def test_transcript_replay_payload_and_panel(tmp_path: Path) -> None:
+    emb = HashingEmbedder()
+    df = _frame(emb, 8, 2)
+    # hit id 3 -> key "episodic:3"; text fallback also works for unknown ids
+    fig = build_memory_map(df, emb, stage=7, turns=_turns())
+    payload = fig.layout.meta["turns"]
+    assert len(payload) == 2 and len(payload[0]["hits"]) == 1 and payload[1]["hits"] == []
+    assert payload[0]["hits"][0]["noise"] == "swap"
+    names = {t.name for t in fig.data}
+    assert {"Sequence recall", "Sequence hits", "Sequence cue"} <= names
+
+    out = write_memory_map(fig, tmp_path / "seq.html", df=df, stage=7)
+    text = out.read_text(encoding="utf-8")
+    assert "Communication sequence" in text and 'id="turns-data"' in text
+    assert "</script><script" not in text.split('id="turns-data"')[1].split("</script>")[0]
+    assert '<script src="http' not in text
+
+
+def test_cli_transcript_replay(tmp_path: Path) -> None:
+    import json
+
+    db, out, tr = tmp_path / "m.db", tmp_path / "o.html", tmp_path / "t.json"
+    runner = CliRunner()
+    assert runner.invoke(app, ["seed-memory", "--db-path", str(db)]).exit_code == 0
+    tr.write_text(json.dumps({"turns": _turns()}), encoding="utf-8")
+    res = runner.invoke(
+        app,
+        ["memory-map", "--db-path", str(db), "--out", str(out), "--transcript", str(tr)],
+    )
+    assert res.exit_code == 0, res.output
+    assert "Communication sequence" in out.read_text(encoding="utf-8")
+    missing = runner.invoke(
+        app, ["memory-map", "--db-path", str(db), "--transcript", str(tmp_path / "x.json")]
+    )
+    assert missing.exit_code == 1
