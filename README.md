@@ -220,8 +220,10 @@ Plotly, no network requests) of every stored memory vector, laid out in 2D with 
 (`--projection pca` for PCA). Similar memories form clusters drawn as hubs with spokes and
 a red label; corrupted records get an orange arrow from the re-embedded ground truth
 (`original_text` / `original_fact`) to the stored vector; `--query` adds a green star linked
-to its 3 nearest memories. Everything has a hover explanation, and the page includes a
-colour key and a "How to read this map" section. It never modifies the store.
+to its 3 nearest memories. Everything has a hover explanation. The control bar above the map has layer toggles
+(episodes, facts, clusters, drift arrows, query) and tools (zoom, reset, pan mode,
+fullscreen, PNG download); mouse-wheel zoom also works. A "How to read this map"
+section sits below. It never modifies the store.
 
 ```bash
 python -m cli.app memory-map --stage 7 [--query "..."] [--projection tsne|pca] [--out path.html] [--open]

@@ -516,8 +516,9 @@ def build_memory_map(
     fig.update_layout(
         title=title,
         template="plotly_dark",
-        paper_bgcolor=BG_COLOR,
-        plot_bgcolor=BG_COLOR,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
         xaxis={"title": x_title, **axis},
         yaxis={"title": y_title, **axis},
         height=700,
@@ -537,49 +538,158 @@ def build_memory_map(
 # --------------------------------------------------------------------------- #
 
 _EXTRA_CSS = f"""
-:root{{--pico-background-color:{BG_COLOR};--pico-card-background-color:#17141a;}}
-body{{background:{BG_COLOR};overflow-x:hidden;}}
-article{{overflow:hidden;}}
-article h3{{margin-bottom:0;}}
-.key{{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;}}
-.key span{{border:1px solid #3a3640;border-radius:999px;padding:.15rem .7rem;font-size:.8rem;
-cursor:help;border-bottom:1px solid #3a3640;text-decoration:none;}}
-.sw{{display:inline-block;width:.7rem;height:.7rem;margin-right:.4rem;}}
+:root{{--pico-background-color:{BG_COLOR};--pico-card-background-color:transparent;
+--glass:rgba(28,24,36,.55);--glass-line:rgba(255,255,255,.09);}}
+body{{min-height:100vh;overflow-x:hidden;background:
+radial-gradient(900px 500px at 8% -5%,rgba(124,58,237,.28),transparent 60%),
+radial-gradient(800px 500px at 100% 10%,rgba(14,165,233,.20),transparent 60%),
+radial-gradient(900px 600px at 50% 110%,rgba(230,57,70,.16),transparent 60%),{BG_COLOR};
+background-attachment:fixed;}}
+h1{{background:linear-gradient(90deg,#fff,#b9a6ff 55%,#7dd3fc);-webkit-background-clip:text;
+background-clip:text;color:transparent;letter-spacing:-.02em;}}
+article{{background:var(--glass);border:1px solid var(--glass-line);border-radius:16px;
+backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+box-shadow:0 10px 40px rgba(0,0,0,.35);overflow:hidden;}}
+section.grid article{{padding:1rem 1.25rem;margin-bottom:0;}}
+section.grid h3{{margin:.1rem 0 0;font-size:1.9rem;font-variant-numeric:tabular-nums;}}
+section.grid small{{text-transform:uppercase;letter-spacing:.08em;font-size:.68rem;opacity:.7;}}
+.stage{{position:relative;padding:0;
+background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px;}}
+.stage:fullscreen{{background-color:{BG_COLOR};}}
+.bar{{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between;
+padding:.7rem .9rem;border-bottom:1px solid var(--glass-line);}}
+.chips,.tools{{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;}}
+.chip{{display:inline-flex;align-items:center;gap:.45rem;margin:0;width:auto;padding:.28rem .75rem;
+font-size:.78rem;font-weight:500;line-height:1.2;color:#e8e8ea;cursor:pointer;
+background:rgba(255,255,255,.05);border:1px solid var(--glass-line);border-radius:999px;
+transition:background .15s,opacity .15s,border-color .15s;}}
+.chip:hover{{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);}}
+.chip[aria-pressed=false]{{opacity:.38;}}
+.chip i{{width:.65rem;height:.65rem;display:inline-block;}}
+.tools{{padding:.2rem;background:rgba(0,0,0,.35);border:1px solid var(--glass-line);border-radius:12px;}}
+.tool{{display:inline-grid;place-items:center;width:2.1rem;height:2.1rem;margin:0;padding:0;
+color:#e8e8ea;background:transparent;border:0;border-radius:9px;cursor:pointer;
+transition:background .15s,color .15s;}}
+.tool:hover{{background:rgba(255,255,255,.14);}}
+.tool[aria-pressed=true]{{background:linear-gradient(135deg,#7c3aed,#0ea5e9);color:#fff;}}
+.tool svg{{width:1.1rem;height:1.1rem;stroke:currentColor;fill:none;stroke-width:2;
+stroke-linecap:round;stroke-linejoin:round;}}
+.sep{{width:1px;height:1.3rem;background:var(--glass-line);margin:0 .15rem;}}
+#memory-map{{width:100%;}}
+details{{border-radius:12px;}}
+[data-tooltip]{{border-bottom:0!important;}}
 """
 
-_KEY = [
-    (CLEAN_COLOR, "0", "Intact memory", "A memory whose stored text still matches the original."),
+_ICONS = {
+    "zoom-in": '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/>',
+    "zoom-out": '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M8 11h6"/>',
+    "reset": '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+    "pan": '<path d="M12 2v20M2 12h20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/>',
+    "full": '<path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>',
+    "png": '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
+}
+
+# (layer id, swatch colour, swatch radius, label, tooltip)
+_LAYERS = [
     (
-        CORRUPT_COLOR,
-        "0",
-        "Corrupted memory",
-        "Text was altered by encoding noise or decay. Bigger = more corrupted.",
+        "episodic",
+        CLEAN_COLOR,
+        "2px",
+        "Episodes",
+        "Episodic memories (squares). Click to show/hide. Orange = corrupted; bigger = more corrupted.",
     ),
     (
+        "facts",
         FACT_COLOR,
-        "45deg",
-        "Biographical fact",
-        "A discrete fact (name, job, family). Orange outline = corrupted.",
+        "2px",
+        "Facts",
+        "Biographical facts (diamonds). Orange outline = corrupted. Click to show/hide.",
     ),
     (
-        CORRUPT_COLOR,
-        "0",
-        "Orange arrow",
-        "Drift: from where the memory should sit (original text) to where it is stored.",
-    ),
-    (
+        "clusters",
         HUB_COLOR,
         "50%",
-        "Red label",
-        "A cluster hub: the centre of a group of similar memories, with spokes to each.",
+        "Clusters",
+        "Hubs, spokes and red labels grouping similar memories. Click to show/hide.",
     ),
     (
+        "drift",
+        CORRUPT_COLOR,
+        "50%",
+        "Drift arrows",
+        "Arrows from where a memory should sit (original text) to where it is stored. Click to show/hide.",
+    ),
+    (
+        "query",
         QUERY_COLOR,
         "50%",
-        "Green star",
-        "Your --query cue; dotted lines go to its 3 nearest memories.",
+        "Query",
+        "Your --query cue (green star) and its 3 nearest memories. Click to show/hide.",
     ),
 ]
+
+_TOOLS = [
+    ("zoom-in", "Zoom in"),
+    ("zoom-out", "Zoom out"),
+    ("reset", "Reset view"),
+    ("sep", ""),
+    ("pan", "Pan mode (drag to move). Off = drag a box to zoom"),
+    ("full", "Fullscreen"),
+    ("png", "Download as PNG"),
+]
+
+_JS = """
+(function(){
+var gd=document.getElementById('memory-map'),stage=document.getElementById('stage');
+function lay(t,id){var n=t.name||'',g=t.legendgroup||'';
+ if(id==='episodic')return n.indexOf('episodic memory')>=0;
+ if(id==='facts')return n.indexOf('biographical fact')>=0;
+ if(id==='clusters')return n==='Cluster spokes'||n==='Cluster hub';
+ if(id==='drift')return g==='drift';
+ if(id==='query')return g==='query';return false;}
+document.querySelectorAll('.chip').forEach(function(c){c.addEventListener('click',function(){
+ var on=c.getAttribute('aria-pressed')!=='true',id=c.dataset.layer;c.setAttribute('aria-pressed',on);
+ var idx=[];gd.data.forEach(function(t,i){if(lay(t,id))idx.push(i);});
+ if(idx.length)Plotly.restyle(gd,{visible:on},idx);
+ if(id==='clusters'){var u={};(gd.layout.annotations||[]).forEach(function(a,i){u['annotations['+i+'].visible']=on;});Plotly.relayout(gd,u);}
+});});
+function zoom(f){var x=gd._fullLayout.xaxis.range,y=gd._fullLayout.yaxis.range,
+ cx=(x[0]+x[1])/2,cy=(y[0]+y[1])/2,hx=(x[1]-x[0])/2*f,hy=(y[1]-y[0])/2*f;
+ Plotly.relayout(gd,{'xaxis.range':[cx-hx,cx+hx],'yaxis.range':[cy-hy,cy+hy]});}
+var act={'zoom-in':function(){zoom(.7);},'zoom-out':function(){zoom(1.4);},
+ 'reset':function(){Plotly.relayout(gd,{'xaxis.autorange':true,'yaxis.autorange':true});},
+ 'png':function(){Plotly.downloadImage(gd,{format:'png',filename:'memory_map',width:1600,height:900,scale:2});},
+ 'full':function(){if(document.fullscreenElement)document.exitFullscreen();else stage.requestFullscreen();},
+ 'pan':function(b){var on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);
+  Plotly.relayout(gd,{dragmode:on?'pan':'zoom'});}};
+document.querySelectorAll('.tool').forEach(function(b){b.addEventListener('click',function(){act[b.dataset.act](b);});});
+document.addEventListener('fullscreenchange',function(){
+ Plotly.relayout(gd,{height:document.fullscreenElement?window.innerHeight-70:700});});
+})();
+"""
+
+
+def _controls_html(has_query: bool) -> str:
+    chips = "".join(
+        f'<button type="button" class="chip" data-layer="{i}" aria-pressed="true" '
+        f'data-tooltip="{html.escape(tip)}"><i style="background:{c};border-radius:{r}"></i>'
+        f"{html.escape(label)}</button>"
+        for i, c, r, label, tip in _LAYERS
+        if i != "query" or has_query
+    )
+    pressed = ' aria-pressed="false"'
+    tools = "".join(
+        '<span class="sep"></span>'
+        if act == "sep"
+        else f'<button type="button" class="tool" data-act="{act}" aria-label="{html.escape(tip)}" '
+        f'data-tooltip="{html.escape(tip)}" data-placement="bottom"'
+        f"{pressed if act == 'pan' else ''}>"
+        f'<svg viewBox="0 0 24 24">{_ICONS[act]}</svg></button>'
+        for act, tip in _TOOLS
+    )
+    return (
+        f'<div class="bar"><div class="chips">{chips}</div><div class="tools">{tools}</div></div>'
+    )
 
 
 def _kpi(label: str, value: str, tip: str) -> str:
@@ -587,15 +697,6 @@ def _kpi(label: str, value: str, tip: str) -> str:
         f'<article data-tooltip="{html.escape(tip)}" data-placement="bottom">'
         f"<small>{html.escape(label)}</small><h3>{html.escape(value)}</h3></article>"
     )
-
-
-def _key_html() -> str:
-    chips = "".join(
-        f'<span data-tooltip="{html.escape(tip)}"><i class="sw" style="background:{c};'
-        f'border-radius:{r}"></i>{html.escape(name)}</span>'
-        for c, r, name, tip in _KEY
-    )
-    return f'<div class="key">{chips}</div>'
 
 
 def _table(df: pd.DataFrame, drift: dict[str, float]) -> str:
@@ -658,7 +759,12 @@ def write_memory_map(
         "pca": "Each dot is one memory, placed by <b>PCA</b> (the two directions of greatest "
         "variation). Axis titles show how much variance each captures.",
     }.get(used, "")
-    plot = fig.to_html(include_plotlyjs=True, full_html=False)
+    plot = fig.to_html(
+        include_plotlyjs=True,
+        full_html=False,
+        div_id="memory-map",
+        config={"displayModeBar": False, "scrollZoom": True, "responsive": True},
+    )
     css = _PICO_CSS_PATH.read_text(encoding="utf-8") + _EXTRA_CSS
     title = "Patient memory map" + (f" - stage {stage}" if stage is not None else "")
     doc = f"""<!doctype html>
@@ -683,8 +789,7 @@ Hover anything for an explanation.</p>
 {_kpi("Biographical facts", str(facts), "Discrete facts about the patient (as opposed to episodes).")}
 {_kpi("Mean cosine drift", mean_drift, "Average of 1 - cosine similarity between each corrupted memory's original and stored vectors. 0 = identical, higher = more degraded.")}
 </section>
-{_key_html()}
-<article>{plot}</article>
+<article id="stage" class="stage">{_controls_html(bool(query_label))}{plot}</article>
 <details open><summary>How to read this map</summary>
 <p>{how}</p>
 <p>Groups of dots joined by thin spokes are <b>clusters</b> of related memories; the red label
@@ -695,6 +800,7 @@ been recalled more often (rehearsal).</p>
 </details>
 {_table(frame, drift) if total else ""}
 </main>
+<script>{_JS}</script>
 </body>
 </html>
 """
