@@ -903,7 +903,7 @@ def write_memory_map(
 
     badges = ""
     if stage is not None:
-        badges += f'<span class="badge stage">{html.escape(_STAGE_LABELS.get(stage, f"Stage {stage}"))}</span>'
+        badges += f'<span class="badge stage-badge">{html.escape(_STAGE_LABELS.get(stage, f"Stage {stage}").split(" (")[0])}</span>'
     badges += f'<span class="badge">layout: {"t-SNE" if used == "tsne" else used.upper()}</span>'
     if query_label:
         badges += f'<span class="badge">query: {html.escape(query_label)}</span>'
@@ -944,11 +944,9 @@ def write_memory_map(
             for i, n in enumerate(_PIPELINE)
         )
         data = json.dumps(turns).replace("</", "<\\/")
-        seq_html = f"""<article class="seq" id="seq">
+        seq_html = f"""<aside class="seq" id="seq">
 <h2>Communication sequence</h2>
-<p class="sub">Replay of a recorded conversation. Step through how one trainee utterance flows
-through the simulator; the recall step lights up the memories it pulled on the map above.
-Keys: left/right arrows.</p>
+<p class="sub">Step through one trainee turn. The recall step lights up the memories it pulled on the map. Arrow keys work too.</p>
 <div class="row"><div class="chips">{pills}</div>
 <div class="tools" style="padding:.3rem .5rem;gap:.4rem">
 <button type="button" class="chip" id="seq-prev">Back</button>
@@ -957,7 +955,7 @@ Keys: left/right arrows.</p>
 <ol class="pipe">{steps}</ol>
 <div class="detail" id="seq-detail"></div>
 <script id="turns-data" type="application/json">{data}</script>
-</article>"""
+</aside>"""
         seq_js = f"<script>{(_ASSETS / 'sequence.js').read_text(encoding='utf-8')}</script>"
 
     css = _PICO_CSS_PATH.read_text(encoding="utf-8") + (_ASSETS / "report.css").read_text(
@@ -974,7 +972,7 @@ Keys: left/right arrows.</p>
 <style>{css}</style>
 </head>
 <body>
-<main class="container">
+<main class="container{" wide" if turns else ""}">
 <header class="hero">
 {_neurons_svg()}
 <p class="eyebrow">Late-stage dementia simulation · researcher view</p>
@@ -989,8 +987,10 @@ reaches into it. Hover anything for an explanation.</p>
 {_kpi("Biographical facts", str(facts), "Discrete facts about the patient (as opposed to episodes).")}
 {_kpi("Mean drift (1 - cos)", mean_drift, "Average of 1 - cosine similarity between each degraded memory's original and stored vectors. 0 = identical, higher = more degraded.")}
 </section>
+<div class="layout{" with-aside" if turns else ""}">
 <article id="stage" class="stage">{_controls_html(bool(query_label), bool(turns))}{plot}{_legend_html(bool(query_label), bool(turns))}{caption}</article>
 {seq_html}
+</div>
 {_table(frame, drift) if total else ""}
 <footer class="foot">
 <b>Methods.</b> Vectors come from the store's own embedder (384-d, L2-normalised). Ground truth
