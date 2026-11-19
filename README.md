@@ -117,6 +117,7 @@ python -m cli.app recall "tell me about your garden" --stage 7   # degraded look
 python -m cli.app add-memory "Susan brought lilies" --stage 6    # may fail / be garbled
 python -m cli.app age-memory --stage 7 --passes 2                # permanent decay
 python -m cli.app memory-stats
+python -m cli.app memory-map --stage 7 --query "tell me about your garden"   # 2D HTML map
 python -m cli.app reset-memory --yes                             # wipe + re-seed
 ```
 
@@ -211,6 +212,20 @@ Exposes `sample_symptom_constraints`, `get_distress_state`,
 `get_patient_biographical_fact`, `store_patient_memory`,
 `age_patient_memory`, `get_memory_stats`, and `get_patient_profile_summary`
 as MCP tools.
+
+## Visual memory map
+
+`memory-map` renders a read-only, fully offline HTML report (Pico.css + Plotly, no
+network requests) of every stored memory vector, PCA-projected to 2D. Corrupted
+records get an arrow from the re-embedded ground truth (`original_text` /
+`original_fact`) to the stored vector, with cosine drift on hover; `--query` places
+a red star and links it to its 3 nearest memories. It never modifies the store.
+
+```bash
+python -m cli.app memory-map --stage 7 [--query "..."] [--out path.html] [--open]
+```
+
+Default output: `evaluation/plots/memory_map_stage{N}.html`.
 
 ## Patient memory model
 

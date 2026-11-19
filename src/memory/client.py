@@ -228,6 +228,28 @@ class PatientMemoryClient:
                 row.pop("vector", None)
         return out
 
+    def list_all(
+        self, collection_name: str, output_fields: list[str], limit: int = 10000
+    ) -> list[dict[str, Any]]:
+        """Read-only dump of every row (include ``"vector"`` in `output_fields` for vectors).
+
+        Raises `RuntimeError` if the row count reaches `limit`, since the result may then be
+        silently truncated. The primary key is an auto-generated int64, so ``id >= 0`` matches
+        every row.
+        """
+        rows = self._client.query(
+            collection_name=collection_name,
+            filter="id >= 0",
+            output_fields=output_fields,
+            limit=limit,
+        )
+        if len(rows) >= limit:
+            raise RuntimeError(
+                f"'{collection_name}' returned {len(rows)} rows, hitting limit={limit}; "
+                "results may be truncated. Raise `limit` to read everything."
+            )
+        return [dict(r) for r in rows]
+
     def update_record(
         self,
         collection_name: str,

@@ -1,0 +1,151 @@
+"""Tests for the read-only memory map (`memory.visualize` and the `memory-map` CLI)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from typer.testing import CliRunner
+
+from cli.app import app
+from memory.client import PatientMemoryClient
+from memory.embeddings import HashingEmbedder
+from memory.visualize import (
+    _COLUMNS,
+    build_memory_map,
+    load_memory_records,
+    project_2d,
+    write_memory_map,
+)
+
+_PROFILE = Path(__file__).resolve().parents[1] / "config/patient_profiles/stage7_late.json"
+
+
+def _frame(embedder: HashingEmbedder, n_clean: int, n_corrupt: int) -> pd.DataFrame:
+    rows = []
+    for i in range(n_clean + n_corrupt):
+        corrupted = i >= n_clean
+        text = f"memory about garden {i}"
+        rows.append(
+            {
+                "key": f"episodic:{i}",
+                "kind": "fact" if i == 0 else "episodic",
+                "text": text + " <b>x</b>",
+                "original_text": f"original {text}" if corrupted else text,
+                "corrupted": corrupted,
+                "corruption_level": 0.5 if corrupted else 0.0,
+                "corruption_ops": "swap" if corrupted else "",
+                "era": "childhood",
+                "emotional_valence": "positive",
+                "category": "family",
+                "access_count": i,
+                "source": "seed",
+                "vector": embedder.embed(text),
+            }
+        )
+    return pd.DataFrame(rows, columns=_COLUMNS)
+
+
+def test_project_2d_deterministic_and_separates_clusters() -> None:
+    rng = np.random.default_rng(0)
+    a = rng.normal(0, 0.05, (10, 8)) + np.eye(8)[0]
+    b = rng.normal(0, 0.05, (10, 8)) + np.eye(8)[1]
+    x = np.vstack([a, b])
+    out = project_2d(x)
+    assert out.shape == (20, 2)
+    np.testing.assert_array_equal(out, project_2d(x))
+    gap = abs(out[:10, 0].mean() - out[10:, 0].mean())
+    assert gap > 5 * max(out[:10, 0].std(), out[10:, 0].std())
+
+
+def test_project_2d_edge_cases() -> None:
+    assert project_2d(np.zeros((0, 8))).shape == (0, 2)
+    np.testing.assert_array_equal(project_2d(np.ones((1, 8))), [[0.0, 0.0]])
+    assert np.all(project_2d(np.ones((4, 8))) == 0)
+    assert np.all(np.isfinite(project_2d(np.arange(6.0).reshape(6, 1))))
+
+
+def test_drift_traces_match_corrupted_count() -> None:
+    emb = HashingEmbedder()
+    fig = build_memory_map(_frame(emb, 3, 2), emb, stage=7)
+    drift = [t for t in fig.data if t.legendgroup == "drift"]
+    assert len(drift) == 2
+    assert sum(bool(t.showlegend) for t in drift) == 1
+
+
+def test_empty_frame_renders() -> None:
+    emb = HashingEmbedder()
+    fig = build_memory_map(pd.DataFrame(columns=_COLUMNS), emb)
+    assert "no memories" in fig.layout.title.text.lower()
+
+
+def test_write_is_offline_and_styled(tmp_path: Path) -> None:
+    emb = HashingEmbedder()
+    df = _frame(emb, 3, 2)
+    fig = build_memory_map(df, emb, query_vector=emb.embed("garden"), query_label="garden")
+    path = write_memory_map(fig, tmp_path / "sub" / "m.html", df=df, stage=7, query_label="garden")
+    text = path.read_text(encoding="utf-8")
+    assert '<script src="http' not in text
+    assert '<link href="http' not in text
+    assert "<style>" in text and "Pico CSS" in text
+    assert "&lt;b&gt;x&lt;/b&gt;" in text  # stored text is escaped in the table
+
+
+def test_cli_memory_map_end_to_end(tmp_path: Path) -> None:
+    db = tmp_path / "mem.db"
+    out = tmp_path / "map.html"
+    runner = CliRunner()
+    common = ["--db-path", str(db), "--profile", str(_PROFILE)]
+    assert (
+        runner.invoke(
+            app, ["age-memory", "--stage", "7", "--passes", "2", "--seed", "1", *common]
+        ).exit_code
+        == 0
+    )
+
+    def snapshot() -> list[dict]:
+        client = PatientMemoryClient(db_path=db)
+        try:
+            return [
+                r for c in ("episodic_memory", "biographical_facts") for r in client.all_records(c)
+            ]
+        finally:
+            client.close()
+
+    before = snapshot()
+    result = runner.invoke(
+        app,
+        [
+            "memory-map",
+            "--stage",
+            "7",
+            "--db-path",
+            str(db),
+            "--out",
+            str(out),
+            "--query",
+            "tell me about your garden",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert out.exists()
+    assert snapshot() == before  # strictly read-only
+
+    client = PatientMemoryClient(db_path=db)
+    try:
+        df = load_memory_records(client)
+    finally:
+        client.close()
+    fig = build_memory_map(
+        df, HashingEmbedder(), query_vector=HashingEmbedder().embed("q"), query_label="q"
+    )
+    arrows = [t for t in fig.data if t.legendgroup == "drift"]
+    assert len(arrows) == int(df["corrupted"].sum()) > 0
+    assert any(t.name == "Query" for t in fig.data)
+    assert "Query" in out.read_text(encoding="utf-8")
+
+
+def test_cli_memory_map_missing_db(tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, ["memory-map", "--db-path", str(tmp_path / "nope.db")])
+    assert result.exit_code == 1

@@ -31,6 +31,7 @@ evaluation/results/*.json
 evaluation/results/*.csv
 !evaluation/results/.gitkeep
 evaluation/plots/*.png
+evaluation/plots/*.html
 !evaluation/plots/.gitkeep
 
 # Testing / tooling
