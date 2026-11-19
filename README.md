@@ -215,15 +215,21 @@ as MCP tools.
 
 ## Visual memory map
 
-`memory-map` renders a read-only, fully offline HTML report (Pico.css + Plotly, no
-network requests) of every stored memory vector, PCA-projected to 2D. Corrupted
-records get an arrow from the re-embedded ground truth (`original_text` /
-`original_fact`) to the stored vector, with cosine drift on hover; `--query` places
-a red star and links it to its 3 nearest memories. It never modifies the store.
+`memory-map` renders a read-only, fully offline, dark-themed HTML report (Pico.css +
+Plotly, no network requests) of every stored memory vector, laid out in 2D with t-SNE
+(`--projection pca` for PCA). Similar memories form clusters drawn as hubs with spokes and
+a red label; corrupted records get an orange arrow from the re-embedded ground truth
+(`original_text` / `original_fact`) to the stored vector; `--query` adds a green star linked
+to its 3 nearest memories. Everything has a hover explanation, and the page includes a
+colour key and a "How to read this map" section. It never modifies the store.
 
 ```bash
-python -m cli.app memory-map --stage 7 [--query "..."] [--out path.html] [--open]
+python -m cli.app memory-map --stage 7 [--query "..."] [--projection tsne|pca] [--out path.html] [--open]
 ```
+
+In t-SNE, distances within a cluster are meaningful but axes and gaps between far-apart
+clusters are not. Inputs under 5 points fall back to PCA. The map is richer with more
+memories (`add-memory`, `age-memory`).
 
 Default output: `evaluation/plots/memory_map_stage{N}.html`.
 

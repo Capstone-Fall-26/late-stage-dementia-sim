@@ -432,12 +432,16 @@ def memory_map(
     ),
     query: str | None = typer.Option(None, "--query", help="Cue to place on the map."),
     embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    projection: str = typer.Option("tsne", "--projection", help="tsne | pca"),
     open_browser: bool = typer.Option(False, "--open/--no-open", help="Open the HTML afterwards."),
 ) -> None:
     """Render a read-only interactive 2D map of memory vectors with degradation drift."""
     stage_enum = _parse_stage(stage)
     if not db_path.exists():
         console.print(f"[red]No memory database at {db_path}; run `seed-memory` first.[/red]")
+        raise typer.Exit(code=1)
+    if projection not in {"tsne", "pca"}:
+        console.print("[red]--projection must be tsne or pca[/red]")
         raise typer.Exit(code=1)
     embedder = get_embedder(embedding_backend)
     client = PatientMemoryClient(db_path=db_path, dim=embedder.dim)
@@ -448,7 +452,12 @@ def memory_map(
 
     query_vector = embedder.embed(query) if query else None
     fig = build_memory_map(
-        df, embedder, query_vector=query_vector, query_label=query, stage=stage_enum.value
+        df,
+        embedder,
+        query_vector=query_vector,
+        query_label=query,
+        stage=stage_enum.value,
+        projection=projection,
     )
     path = write_memory_map(
         fig,

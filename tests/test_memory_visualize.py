@@ -149,3 +149,23 @@ def test_cli_memory_map_end_to_end(tmp_path: Path) -> None:
 def test_cli_memory_map_missing_db(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["memory-map", "--db-path", str(tmp_path / "nope.db")])
     assert result.exit_code == 1
+
+
+def test_tsne_layout_has_hubs_and_is_deterministic() -> None:
+    emb = HashingEmbedder()
+    df = _frame(emb, 10, 3)
+    a = build_memory_map(df, emb, query_vector=emb.embed("garden"), query_label="garden")
+    b = build_memory_map(df, emb, query_vector=emb.embed("garden"), query_label="garden")
+    assert a.layout.meta["projection"] == "tsne"
+    assert len(a.layout.annotations) >= 1  # one red hub label per cluster
+    assert any(t.name == "Cluster hub" for t in a.data)
+    np.testing.assert_allclose(a.data[1].x, b.data[1].x)
+    assert a.layout.xaxis.title.text == "t-SNE 1"
+
+
+def test_tiny_input_falls_back_to_pca_and_pca_flag() -> None:
+    emb = HashingEmbedder()
+    tiny = build_memory_map(_frame(emb, 2, 0), emb)
+    assert tiny.layout.meta["projection"] == "pca"
+    pca = build_memory_map(_frame(emb, 8, 2), emb, projection="pca")
+    assert pca.layout.xaxis.title.text.startswith("PC1 (")
