@@ -12,6 +12,7 @@ Usage:
     dementia-sim add-memory "Susan brought lilies today" --stage 6
     dementia-sim age-memory --stage 7
     dementia-sim memory-stats
+    dementia-sim memory-map --stage 7 --query "tell me about your garden"
     dementia-sim reset-memory
     dementia-sim list-profiles
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import time
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +56,12 @@ from memory.embeddings import get_embedder
 from memory.encoding import MemoryEncoder
 from memory.noise import MemoryNoiseModel, build_confusion_map
 from memory.recall import MemoryRecall
+from memory.visualize import (
+    build_memory_map,
+    load_memory_records,
+    load_transcript,
+    write_memory_map,
+)
 
 load_dotenv()
 
@@ -418,6 +426,67 @@ def memory_stats(
     for name, row in stats.items():
         table.add_row(name, str(row["rows"]), str(row["from_conversation"]), str(row["corrupted"]))
     console.print(table)
+
+
+@app.command("memory-map")
+def memory_map(
+    stage: int = typer.Option(7, "--stage", help="GDS/FAST stage label: 5, 6 or 7."),
+    db_path: Path = typer.Option(_DEFAULT_DB_PATH, "--db-path"),
+    out: Path | None = typer.Option(
+        None, "--out", help="Output HTML (default evaluation/plots/memory_map_stage{N}.html)."
+    ),
+    query: str | None = typer.Option(None, "--query", help="Cue to place on the map."),
+    embedding_backend: str = typer.Option("hashing", "--embedding-backend"),
+    projection: str = typer.Option("tsne", "--projection", help="tsne | pca"),
+    transcript: Path | None = typer.Option(
+        None,
+        "--transcript",
+        help="Saved chat transcript JSON to replay as a step-through communication sequence.",
+    ),
+    open_browser: bool = typer.Option(False, "--open/--no-open", help="Open the HTML afterwards."),
+) -> None:
+    """Render a read-only interactive 2D map of memory vectors with degradation drift."""
+    stage_enum = _parse_stage(stage)
+    if not db_path.exists():
+        console.print(f"[red]No memory database at {db_path}; run `seed-memory` first.[/red]")
+        raise typer.Exit(code=1)
+    if projection not in {"tsne", "pca"}:
+        console.print("[red]--projection must be tsne or pca[/red]")
+        raise typer.Exit(code=1)
+    embedder = get_embedder(embedding_backend)
+    client = PatientMemoryClient(db_path=db_path, dim=embedder.dim)
+    try:
+        df = load_memory_records(client)
+    finally:
+        client.close()
+
+    if transcript is not None and not transcript.exists():
+        console.print(f"[red]Transcript not found: {transcript}[/red]")
+        raise typer.Exit(code=1)
+    turns = load_transcript(transcript) if transcript else None
+    query_vector = embedder.embed(query) if query else None
+    fig = build_memory_map(
+        df,
+        embedder,
+        query_vector=query_vector,
+        query_label=query,
+        stage=stage_enum.value,
+        projection=projection,
+        turns=turns,
+    )
+    path = write_memory_map(
+        fig,
+        out or Path(f"evaluation/plots/memory_map_stage{stage_enum.value}.html"),
+        df=df,
+        stage=stage_enum.value,
+        query_label=query,
+    )
+    corrupted = int(df["corrupted"].sum()) if len(df) else 0
+    facts = int((df["kind"] == "fact").sum()) if len(df) else 0
+    console.print(f"[green]Wrote {path}[/green]")
+    console.print(f"Points: {len(df)}  corrupted: {corrupted}  facts: {facts}")
+    if open_browser:
+        webbrowser.open(path.resolve().as_uri())
 
 
 @app.command("reset-memory")
