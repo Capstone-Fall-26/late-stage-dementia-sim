@@ -362,8 +362,9 @@ The **Communication sequence** panel steps through the eight stages of a turn (t
 utterance, trigger assessment, symptom sampling, memory recall, prompt assembly, LLM
 generation, post-processing, encoding), showing the real sampled values for that turn. At the
 recall step the cue appears as a cyan star and the retrieved memories light up as rings
-(teal = faithful, amber = already degraded, red = noise injected at retrieval). Use
-Back/Play/Next, the turn buttons, or the left/right arrow keys.
+(green = faithful, amber = already degraded, red = noise injected at retrieval). Use
+Back/Play/Next, a 0.5x-3x speed selector, a clickable progress bar, the turn buttons, or the
+left/right arrow keys.
 
 Use the *same* `--db-path` for the chat and the map: hits are matched to points by record id
 (falling back to text), so a different database will not line up. The atlas needs a non-empty

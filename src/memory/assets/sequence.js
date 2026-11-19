@@ -3,7 +3,7 @@ var gd=document.getElementById('memory-map');
 var turns=JSON.parse(document.getElementById('turns-data').textContent);
 if(!turns.length)return;
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-var COL={faithful:'#2dd4bf',stored_corruption:'#ff9f43',noisy:'#ef4444'};
+var COL={faithful:'#6fae8a',stored_corruption:'#d9a15a',noisy:'#c4605c'};
 function hitColor(n){return !n?COL.faithful:(n==='stored_corruption'?COL.stored_corruption:COL.noisy);}
 var NOISE={swap:'a neighbouring memory surfaced instead',substitution:'details were altered at retrieval',
  'swap+substitution':'wrong memory AND altered details',stored_corruption:'the stored record was already degraded'};
@@ -23,7 +23,7 @@ var STEPS=[
   d:function(T){if(T.constraints&&T.constraints.memory_fog)return '<p><b>Memory fog:</b> total retrieval failure this turn, so recall is skipped and nothing is injected into the prompt.</p>';
    if(!T.hits.length)return '<p>Nothing surfaced.</p>';
    var r=T.hits.map(function(h){var n=h.noise;return '<tr><td><span class="dot" style="background:'+hitColor(n)+'"></span>'+esc(h.coll==='episodic_memory'?'episode':'fact')+'</td><td>'+esc(h.text)+'</td><td>'+Number(h.score).toFixed(3)+'</td><td>'+(n?esc(n)+': '+esc(NOISE[n]||''):'faithful')+'</td></tr>';}).join('');
-   return '<p>Highlighted on the map (rings): teal = faithful, amber = stored record already degraded, red = noise injected at retrieval.</p><figure><table><thead><tr><th>Kind</th><th>Surfaced text</th><th>Score</th><th>Reliability</th></tr></thead><tbody>'+r+'</tbody></table></figure>';}},
+   return '<p>Highlighted on the map (rings): green = faithful, amber = stored record already degraded, red = noise injected at retrieval.</p><figure><table><thead><tr><th>Kind</th><th>Surfaced text</th><th>Score</th><th>Reliability</th></tr></thead><tbody>'+r+'</tbody></table></figure>';}},
  {t:'Prompt assembly',mod:'core/patient_engine.py -> build_system_prompt()',
   why:'Persona, family, distress state, constraint rules and the degraded memories are composed into the system prompt. The model sees degraded text, never the clean original.',
   d:function(T){return '<p>Hazy or uncertain memories are tagged as such so the model conveys them loosely or wrongly instead of quoting them. '+(T.hits.length?T.hits.length+' fragment(s) injected.':'No fragments injected.')+'</p>';}},
@@ -37,7 +37,7 @@ var STEPS=[
   why:'What the trainee said is stored as a new episodic memory, unless encoding fails (80% at stage 7), and what is stored may already be garbled.',
   d:function(T){var e=T.encoded;return '<p>'+(e===true?'Encoded as a new (possibly corrupted) episodic memory.':(e===false?'Encoding failed or was skipped: the patient did not retain this turn.':'Not recorded in this transcript.'))+'</p>';}}
 ];
-var turn=0,step=0,timer=null;
+var turn=0,step=0,timer=null,speed=1,BASE=2600;
 var idx={};gd.data.forEach(function(t,i){idx[t.name]=i;});
 function setTrace(name,upd){if(idx[name]!=null)Plotly.restyle(gd,upd,[idx[name]]);}
 function draw(){
@@ -58,12 +58,15 @@ function draw(){
 function next(){if(step<STEPS.length-1){step++;}else if(turn<turns.length-1){turn++;step=0;}else{stop();return;}draw();}
 function prev(){if(step>0){step--;}else if(turn>0){turn--;step=STEPS.length-1;}draw();}
 function stop(){if(timer){clearInterval(timer);timer=null;}var b=document.getElementById('seq-play');if(b)b.setAttribute('aria-pressed','false');}
-function play(){if(timer){stop();return;}if(turn===turns.length-1&&step===STEPS.length-1){turn=0;step=0;draw();}document.getElementById('seq-play').setAttribute('aria-pressed','true');timer=setInterval(next,2600);}
+function play(){if(timer){stop();return;}if(turn===turns.length-1&&step===STEPS.length-1){turn=0;step=0;draw();}document.getElementById('seq-play').setAttribute('aria-pressed','true');timer=setInterval(next,BASE/speed);}
 document.querySelectorAll('.step').forEach(function(b,i){b.addEventListener('click',function(){stop();step=i;draw();});});
 document.querySelectorAll('.pill').forEach(function(b,i){b.addEventListener('click',function(){stop();turn=i;step=0;draw();});});
 document.getElementById('seq-next').addEventListener('click',function(){stop();next();});
 document.getElementById('seq-prev').addEventListener('click',function(){stop();prev();});
 document.getElementById('seq-play').addEventListener('click',play);
+document.querySelectorAll('.spd').forEach(function(b){b.addEventListener('click',function(){
+ speed=parseFloat(b.dataset.speed);document.querySelectorAll('.spd').forEach(function(o){o.setAttribute('aria-pressed',o===b);});
+ if(timer){clearInterval(timer);timer=setInterval(next,BASE/speed);}});});
 document.getElementById('seq-progress').addEventListener('click',function(e){var r=this.getBoundingClientRect(),f=(e.clientX-r.left)/r.width,p=Math.min(turns.length*STEPS.length-1,Math.floor(f*turns.length*STEPS.length));stop();turn=Math.floor(p/STEPS.length);step=p%STEPS.length;draw();});
 document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'){stop();next();}else if(e.key==='ArrowLeft'){stop();prev();}});
 draw();

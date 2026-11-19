@@ -25,14 +25,14 @@ from memory.embeddings import Embedder
 _ASSETS = Path(__file__).parent / "assets"
 _PICO_CSS_PATH = _ASSETS / "pico.min.css"
 
-BG_COLOR = "#0b0d14"
-CLEAN_COLOR = "#e8e8ea"
-CORRUPT_COLOR = "#ff9f43"
-SEQ_COLOR = "#22d3ee"
-FACT_COLOR = "#4aa3df"
-QUERY_COLOR = "#2ecc71"
-HUB_COLOR = "#e63946"
-SPOKE_COLOR = "rgba(255,255,255,0.35)"
+BG_COLOR = "#0f131a"
+CLEAN_COLOR = "#c9ced6"
+CORRUPT_COLOR = "#d9a15a"
+SEQ_COLOR = "#5eb5c9"
+FACT_COLOR = "#6f9fd0"
+QUERY_COLOR = "#6fae8a"
+HUB_COLOR = "#b4524f"
+SPOKE_COLOR = "rgba(255,255,255,0.28)"
 
 _EPISODIC_FIELDS = [
     "id",
@@ -640,7 +640,7 @@ def build_memory_map(
         legend={"orientation": "h", "y": -0.1},
         margin={"l": 70, "r": 40, "t": 30, "b": 80},
         font={"size": 13},
-        hoverlabel={"align": "left", "bgcolor": "#161a28", "font": {"size": 12}},
+        hoverlabel={"align": "left", "bgcolor": "#1a202b", "font": {"size": 12}},
     )
     fig.layout.meta = {
         "drift": {str(df.at[i, "key"]): d for i, d in drift_by_pos.items()},
@@ -716,7 +716,7 @@ _TOOLS = [
 def _controls_html(has_query: bool, has_seq: bool) -> str:
     chips = "".join(
         f'<button type="button" class="chip" data-layer="{i}" aria-pressed="true" '
-        f'data-tooltip="{html.escape(tip)}"><i style="background:{c};border-radius:{r}"></i>'
+        f'data-tip="{html.escape(tip)}"><i style="background:{c};border-radius:{r}"></i>'
         f"{html.escape(label)}</button>"
         for i, c, r, label, tip in _LAYERS
         if (i != "query" or has_query) and (i != "sequence" or has_seq)
@@ -726,7 +726,7 @@ def _controls_html(has_query: bool, has_seq: bool) -> str:
         '<span class="sep"></span>'
         if act == "sep"
         else f'<button type="button" class="tool" data-act="{act}" aria-label="{html.escape(tip)}" '
-        f'data-tooltip="{html.escape(tip)}" data-placement="bottom"'
+        f'data-tip="{html.escape(tip)}"'
         f"{pressed if act == 'pan' else ''}>"
         f'<svg viewBox="0 0 24 24">{_ICONS[act]}</svg></button>'
         for act, tip in _TOOLS
@@ -738,7 +738,7 @@ def _controls_html(has_query: bool, has_seq: bool) -> str:
 
 def _kpi(label: str, value: str, tip: str) -> str:
     return (
-        f'<article data-tooltip="{html.escape(tip)}" data-placement="bottom">'
+        f'<article data-tip="{html.escape(tip)}">'
         f"<small>{html.escape(label)}</small><h3>{html.escape(value)}</h3></article>"
     )
 
@@ -849,7 +849,7 @@ def _legend_html(has_query: bool, has_seq: bool) -> str:
                     f'<path d="M16 3l3.9 8.2 9 1.1-6.6 6.2 1.7 8.9L16 23l-8 4.4 1.7-8.9-6.6-6.2 9-1.1z" fill="{SEQ_COLOR}"/>'
                 ),
                 "Sequence cue & recalled rings",
-                "In the replay, the star is the trainee's turn and rings mark what the patient recalled: teal = faithful, amber = already degraded, red = noise injected at retrieval.",
+                "In the replay, the star is the trainee's turn and rings mark what the patient recalled: green = faithful, amber = already degraded, red = noise injected at retrieval.",
             )
         )
     body = "".join(
@@ -873,8 +873,8 @@ def _neurons_svg() -> str:
         dots.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{2 + (i % 3)}"/>')
     return (
         '<svg class="neurons" viewBox="0 0 400 120" aria-hidden="true">'
-        f'<g stroke="rgba(94,234,212,.45)" stroke-width="1">{"".join(lines)}</g>'
-        f'<g fill="rgba(196,181,253,.8)">{"".join(dots)}</g></svg>'
+        f'<g stroke="rgba(140,160,185,.35)" stroke-width="1">{"".join(lines)}</g>'
+        f'<g fill="rgba(160,175,200,.6)">{"".join(dots)}</g></svg>'
     )
 
 
@@ -939,6 +939,10 @@ def write_memory_map(
             f'<button type="button" class="pill" aria-pressed="false">Turn {t["n"]}</button>'
             for t in turns
         )
+        speeds = "".join(
+            f'<button type="button" class="spd" data-speed="{v}" aria-pressed="{"true" if v == "1" else "false"}">{v}\u00d7</button>'
+            for v in ("0.5", "1", "1.5", "2", "3")
+        )
         steps = "".join(
             f'<li><button type="button" class="step"><span class="n">{i + 1}</span>{html.escape(n)}</button></li>'
             for i, n in enumerate(_PIPELINE)
@@ -947,12 +951,13 @@ def write_memory_map(
         seq_html = f"""<aside class="seq" id="seq">
 <h2>Communication sequence</h2>
 <p class="sub">Step through one trainee turn. The recall step lights up the memories it pulled on the map. Arrow keys work too.</p>
-<div class="row"><div class="chips">{pills}</div>
-<div class="tools">
-<button type="button" class="tool" id="seq-prev" aria-label="Previous step" data-tooltip="Previous step" data-placement="bottom"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8z"/><path d="M5 4v16"/></svg></button>
-<button type="button" class="tool play" id="seq-play" aria-label="Play or pause" aria-pressed="false" data-tooltip="Play / pause" data-placement="bottom"><svg class="i-play fill" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg><svg class="i-pause fill" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
-<button type="button" class="tool" id="seq-next" aria-label="Next step" data-tooltip="Next step" data-placement="bottom"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><path d="M19 4v16"/></svg></button></div></div>
-<div class="progress" id="seq-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-tooltip="Click to jump" data-placement="bottom"><div class="fill"></div></div>
+<div class="chips turns">{pills}</div>
+<div class="row"><div class="tools">
+<button type="button" class="tool" id="seq-prev" aria-label="Previous step" data-tip="Previous step"><svg viewBox="0 0 24 24"><path d="M19 20L9 12l10-8z"/><path d="M5 4v16"/></svg></button>
+<button type="button" class="tool play" id="seq-play" aria-label="Play or pause" aria-pressed="false" data-tip="Play / pause"><svg class="i-play fill" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg><svg class="i-pause fill" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg></button>
+<button type="button" class="tool" id="seq-next" aria-label="Next step" data-tip="Next step"><svg viewBox="0 0 24 24"><path d="M5 4l10 8-10 8z"/><path d="M19 4v16"/></svg></button></div>
+<div class="speed" role="group" aria-label="Playback speed"><span>Speed</span>{speeds}</div></div>
+<div class="progress" id="seq-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-tip="Click to jump"><div class="fill"></div></div>
 <div class="plabel" id="seq-plabel"></div>
 <ol class="pipe">{steps}</ol>
 <div class="detail" id="seq-detail"></div>
