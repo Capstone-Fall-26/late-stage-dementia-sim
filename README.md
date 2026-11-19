@@ -141,7 +141,7 @@ sequenceDiagram
         E->>R: recall(utterance) for episodes and facts
         R->>V: vector search (cue + noise)
         V-->>R: nearest candidates
-        R-->>E: hits attenuated by era, decay, rehearsal; maybe swapped / substituted
+        R-->>E: hits attenuated by era, decay, rehearsal, maybe swapped / substituted
     end
     E->>E: build_system_prompt(persona, state, rules, degraded memories)
     E->>L: generate(system prompt, recent history)
@@ -320,6 +320,8 @@ python -m cli.app memory-map --stage 7 \
 
 Default output: `evaluation/plots/memory_map_stage{N}.html` (gitignored; the file is ~5 MB
 because Plotly is embedded).
+
+**Live demo (stage 7):** https://capstone-fall-26.github.io/late-stage-dementia-sim/
 
 **What you see**
 
